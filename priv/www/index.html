@@ -24,6 +24,11 @@ pre i,
 pre i *{color:#090;}
 
 /* Chat */
+#chat .who {
+   width: 15em;
+   color: white;
+   background-color: black;
+}
 #chat {border:2px solid #000;width:100%;height:10em;overflow:auto;}
 #chat ol {margin:0px;padding:5px;list-style:none;}
 #chat li {border-bottom:1px solid #eee;padding:5px 10px;}
@@ -52,6 +57,8 @@ pre i *{color:#090;}
                 </ol>
             </div>
             <form id="chatter">
+                <label for="who">Who: </label>
+                <input type="text" name="who" id="who" value="testuser" /><br/>
                 <label for="message">Message: </label>
                 <input type="text" name="message" id="message">
                 <input type="submit" class="submit" value="say it!">
@@ -67,6 +74,7 @@ pre i *{color:#090;}
 (function($) {
     $(document).ready(function() {
         var url = "/chat";
+        var curChanTime = "1";
 
         $("#chat").bind("message", function(event, message) {
             $(this).triggerHandler("append", [message]);
@@ -82,23 +90,24 @@ pre i *{color:#090;}
             ]);//*/
             $(this).triggerHandler("poll");
             
-        }).bind("append", function(event, message) {
+        }).bind("append", function(event, data) {
             $("ol", this).append([
-                '<li>',
-                message,
+                '<li>','<span class="who">',
+                data.who, '</span>', ":" + data.message,
                 "</li>"].join(""));
             this.scrollTop = $("ol", this).get(0).offsetHeight;
 
         }).bind("poll", function(event) {
             var self = this;
             $.ajax({
-                url: url + "/foo/" + new Date().getTime().toString(),
+                url: url + "/foo/" + curChanTime,
                 dataType: "json",
                 method: "get",
                 success: function(data) {
-                    if("ok" in data) {
-                        $(self).triggerHandler("message", [data.ok]);
-                    } else if("error" in data) {
+                    if(data.status == "ok") {
+                        curChanTime = data.time + 1;
+                        $(self).triggerHandler("message", [data]);
+                    } else if(data.status == "error") {
                         $(self).triggerHandler("error", [data.error]);
                     } else {
                         alert("epic fail!");
@@ -112,13 +121,13 @@ pre i *{color:#090;}
                 url: url,
                 dataType: "json",
                 type: "POST",
-                data: "message="+$("#message").val(),
+                data: "message="+$("#message").val()+"&who="+$("#who").val(),
                 success: function(data) {
                     $("#message").val("").focus();
                     var chat = $("#chat");
-                    if("ok" in data) {
-                        chat.triggerHandler("posted", [data.ok]);
-                    } else if("error" in data) {
+                    if(data.status == "ok") {
+                        chat.triggerHandler("posted", [data.message]);
+                    } else if(data.status == "error") {
                         chat.triggerHandler("error", [data.error]);
                     } else {
                         alert("epic fail!");
