@@ -136,6 +136,25 @@ pre i *{color:#090;}
             });
             return false;
         });
+        $("#message").keyup(function(event){
+            $.ajax({
+                url: url,
+                dataType: "json",
+                type: "POST",
+                data: "message="+$("#message").val()+"&who="+$("#who").val(),
+                success: function(data) {
+                    var chat = $("#chat");
+                    if(data.status == "ok") {
+                        chat.triggerHandler("posted", [data.message]);
+                    } else if(data.status == "error") {
+                        chat.triggerHandler("error", [data.error]);
+                    } else {
+                        alert("epic fail!");
+                    }
+                }
+            });
+            return false;
+        });
 
         $("#message").attr("autocomplete", "off").focus();
     });

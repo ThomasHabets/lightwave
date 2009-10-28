@@ -7,7 +7,7 @@
 -author('author <author@example.com>').
 
 -export([start/1, stop/0, loop/2,
-         room/0, room/3]).
+         room/0, room/4]).
 
 % timeout for internal messages that should just be acked
 -define(ACK_TIMEOUT, 100).
@@ -34,8 +34,9 @@ roomFlush(From, TimeStart, Data) ->
                           io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
                           case N+1 > TimeStart of
                               true ->
-                                  io:format("send: ~p~n", [Line]),
-                                  From ! D;
+                                  Msg = {message, D},
+                                  io:format("send: ~p~n", [Msg]),
+                                  From ! Msg;
                               Any ->
                                   io:format("don't send: ~p~n", [Any]),
                                   ok
@@ -50,43 +51,48 @@ itoa(I) ->
 
 room() ->
     io:format("room: booting~n"),
-    ?MODULE:room(3, [], [
-                         {1, lightwave, list_to_binary("Initial message")},
-                         {2, lightwave, list_to_binary("Initial message2")}
-                        ]).
+    ?MODULE:room(3,
+                 [],
+                 [
+                  {1, lightwave, list_to_binary("Initial message")},
+                  {2, lightwave, list_to_binary("Initial message2")}
+                 ],
+                []).
 %%
 %% Time: next timestamp in channel
 %% Users: Pids of users subscribed
 %% Data: ordered list of all data in channel {Time, Who, Message}
 %%
-room(Time, Users, Data) ->
+room(Time, Users, Data, Keys) ->
     io:format("room: looping~n"),
     receive
         {From, subscribe, TimeStart} ->
             io:format("room: subscribe ~p ~p~n", [From, TimeStart]),
             From ! subscribed,
             roomFlush(From, TimeStart, Data),
-            ?MODULE:room(Time, [From | Users], Data);
+            ?MODULE:room(Time, [From | Users], Data, Keys);
         {From, unsubscribe} ->
             io:format("room: unsubscribe~n"),
             From ! unsubscribed,
-            ?MODULE:room(Time, Users -- [From], Data);
+            ?MODULE:room(Time, Users -- [From], Data, Keys);
+        {From, type, Who, Typed} ->
+            ?MODULE:room(Time, Users, Data, [Typed | Keys]);
         {From, post, Who, Message} ->
             io:format("room: post~n"),
             From ! posted,
             lists:foreach(fun(User) ->
                     % broadcast the message
-                    User ! {Time,Who,Message}
+                    User ! {message, {Time, Who, Message}}
                 end, Users),
             ?MODULE:room(Time+1, Users,
                          lists:reverse([{Time,Who,Message}
-                                        | lists:reverse(Data)]));
+                                        | lists:reverse(Data)]), Keys);
         _ ->
             io:format("room: unknown message received~n"),
-            ?MODULE:room(Time, Users, Data)
+            ?MODULE:room(Time, Users, Data, Keys)
     end.
 
-get_the_room() ->
+get_the_room(_RoomName) ->
     % does the room exists?
     Pid = whereis(theroom),
     if
@@ -102,21 +108,48 @@ get_the_room() ->
             NewPid
     end.
 
-getMessage(FromTime) ->
-    io:format("Waiting for message ~p~n", [FromTime]),
+getMessages(FromTime) ->
+    getMessages(FromTime, {error, error, lightwave, <<"timeout">>, 0}).
+getMessages(FromTime, TimeoutError) ->
+    io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
-        {MsgTime, Who, Message} ->
+        {Type, {MsgTime, Who, Message}} ->
             case MsgTime < FromTime of
                 true ->
                     io:format("Ignored ~p~n", [MsgTime]),
-                    getMessage(FromTime);
+                    getMessages(FromTime);
                 _ ->
-                    {ok, Who, Message, MsgTime}
+                    [{ok, Type, Who, Message, MsgTime}
+                     | getMessages(FromTime, [])]
             end;
         Any ->
             io:format("invalid message sent to getMessage(): ~p~n", [Any])
-    after ?GET_TIMEOUT ->
-            {error, lightwave, <<"timeout">>, 0}
+    after 100 ->
+            TimeoutError
+    end.
+
+constructReply(Req, Messages) ->
+    constructReply(Req, Messages, []).
+constructReply(Req, [], Ret) ->
+    Ret2 = lists:reverse(Ret),
+    io:format("Encoding: ~p~n", [Ret2]),
+    Req:ok({"text/javascript", mochijson2:encode(Ret2)});
+
+constructReply(Req, Messages, Ret) ->
+    [H|T] = Messages,
+    {Status, Type, Who, Message, MsgTime} = H,
+    Cur = {struct, [
+                    {status, Status},
+                    {type, Type},
+                    {who, Who},
+                    {message, Message},
+                    {time, MsgTime}
+                   ]},
+    case Status of
+        error ->
+            constructReply(Req, [], Cur);
+        _ ->
+            constructReply(Req, T, [Cur | Ret])
     end.
 
 handleGET(Req, DocRoot) ->
@@ -125,22 +158,15 @@ handleGET(Req, DocRoot) ->
         "chat/foo/" ++ FromTimeS ->
             FromTime = atoi(FromTimeS),
             Room = "foo",
-            RoomPid = get_the_room(),
+            RoomPid = get_the_room(Room),
             RoomPid ! {self(), subscribe, FromTime},
             receive
                 subscribed ->
-                    %% subscription is ok
-                    %% now wait for a message
-                    {Type, Who, Message, Time} = getMessage(FromTime)
+                    Msgs = getMessages(FromTime),
+                    io:format("webloop: messages: ~p ~p~n", [Req, Msgs]),
+                    constructReply(Req, Msgs)
             after ?ACK_TIMEOUT ->
                     io:format("webloop: can't sub?~n"),
-                    {Type, Who, Message, Time} = {error, <<"timeout">>, 0}
-            end,
-            
-            case Type of
-                error ->
-                    %% we need to unsubscribe from the room
-                    %% because it failed somewhere
                     RoomPid ! {self(), unsubscribe},
                     receive
                         unsubscribed ->
@@ -148,36 +174,53 @@ handleGET(Req, DocRoot) ->
                     after ?ACK_TIMEOUT ->
                             %% FIXME: log unsubscribe timeout
                             ok
-                    end;
-                ok ->
-                    ok
-            end,
-            
-            %% send back the JSON message
-            Req:ok({"text/javascript", mochijson2:encode({
+                    end,
+                    Req:ok({"text/javascript", mochijson2:encode(
+                                                 {
                             struct, [
-                                     {"status", Type},
-                                     {"who", Who},
-                                     {"message", Message},
-                                     {"time", Time}
+                                     {"status", error},
+                                     {"message", "blaha"}
                                     ]})
-                   });
+                           })
+            end;
         _ ->
             Req:serve_file(Path, DocRoot)
-    end.    
+    end.
 
 handlePOST(Req, DocRoot) ->
     "/" ++ Path = Req:get(path),
     case Path of
+        "type/" ++ Room ->
+            io:format("POST type~n"),
+            Data = Req:parse_post(),
+            PostWho = list_to_binary(proplists:get_value("who", Data)),
+            PostKeys = list_to_binary(proplists:get_value("keys", Data)),
+            Room = "foo",
+            
+            RoomPid = get_the_room(Room),
+            %% post
+            RoomPid ! {self(),
+                    type,
+                    PostWho,
+                    PostKeys
+                    },
+            
+            receive
+                typed ->
+                    {Status, Message} = {ok, <<"typed">>}
+            after ?ACK_TIMEOUT ->
+                    {Status, Message} = {error, <<"timeout">>}
+            end;
+            
         "chat" ->
             io:format("POST chat~n"),
             Data = Req:parse_post(),
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
-            
-            Room = get_the_room(),
+            Room = "foo",
+            RoomPid = get_the_room(Room),
             %% post
-            Room ! {self(),
+            RoomPid ! {self(),
                     post,
                     PostWho,
                     PostMessage
