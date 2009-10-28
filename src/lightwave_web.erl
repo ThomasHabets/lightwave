@@ -6,9 +6,13 @@
 -module(lightwave_web).
 -author('author <author@example.com>').
 
--export([start/1, stop/0, loop/2, room/2]).
+-export([start/1, stop/0, loop/2,
+         room/0, room/3]).
 
--define(TIMEOUT, 20000).
+% timeout for internal messages that should just be acked
+-define(ACK_TIMEOUT, 100).
+
+-define(GET_TIMEOUT, 30000).
 
 %% External API
 
@@ -22,27 +26,62 @@ start(Options) ->
 stop() ->
     mochiweb_http:stop(?MODULE).
 
+roomFlush(From, TimeStart, Data) ->
+    io:format("Flushing from ~p~n", [TimeStart]),
+    lists:foreach(fun(D) ->
+                          io:format("Iter: ~p~n", [D]),
+                          {N, Line} = D,
+                          io:format("Iter: ~p ~p~n", [N, Line]),
+                          case N+1 > TimeStart of
+                              true ->
+                                  io:format("send: ~p~n", [Line]),
+                                  From ! D;
+                              Any ->
+                                  io:format("don't send: ~p~n", [Any]),
+                                  ok
+                          end
+                  end, Data).
+
+atoi(A) ->
+    {R,_} = string:to_integer(A),
+    R.
+
 room() ->
-    room([], []).
-room(Users, Data) ->
+    io:format("room: booting~n"),
+    ?MODULE:room(3, [], [
+                         {1, list_to_binary("Initial message")},
+                         {2, list_to_binary("Initial message, line 2")}
+                        ]).
+%%
+%% Time: next timestamp in channel
+%% Users: Pids of users subscribed
+%% Data: ordered list of all data in channel
+%%
+room(Time, Users, Data) ->
+    io:format("room: looping~n"),
     receive
-        {From, subscribe} ->
-            io:format("room DEBUG: subscribed ~s~n", [From]),
+        {From, subscribe, TimeStart} ->
+            io:format("room: subscribe ~p ~p~n", [From, TimeStart]),
             From ! subscribed,
-            ?MODULE:room([From | Users], Data);
+            roomFlush(From, atoi(TimeStart), Data),
+            ?MODULE:room(Time, [From | Users], Data);
         {From, unsubscribe} ->
+            io:format("room: unsubscribe~n"),
             From ! unsubscribed,
-            ?MODULE:room(Users -- [From], Data);
+            ?MODULE:room(Time, Users -- [From], Data);
         {From, post, Message} ->
+            io:format("room: post~n"),
             From ! posted,
             lists:foreach(fun(User) ->
                     % broadcast the message
-                    User ! Message
+                    User ! {Time,Message}
                 end, Users),
-            ?MODULE:room(Users, Data);
-        Any ->
-            io:format("room: unknown message: ~s~n", [Any]),
-            ?MODULE:room(Users, Data)
+            ?MODULE:room(Time+1, Users,
+                         lists:reverse([{Time,Message}
+                                        | lists:reverse(Data)]));
+        _ ->
+            io:format("room: unknown message received~n"),
+            ?MODULE:room(Time, Users, Data)
     end.
 
 get_the_room() ->
@@ -55,7 +94,7 @@ get_the_room() ->
         true ->
             % create it
             NewPid = spawn(fun() ->
-                room()
+                ?MODULE:room()
             end),
             register(theroom, NewPid),
             NewPid
@@ -69,26 +108,24 @@ loop(Req, DocRoot) ->
         % Get new data
         %
         Method when Method =:= 'GET'; Method =:= 'HEAD' ->
-            FromId = 1,
             case Path of
-                "chat/" ++ ChatRest ->
+                "chat/foo/" ++ FromTime ->
                     Room = "foo",
                     RoomPid = get_the_room(),
-                    RoomPid ! {self(), subscribe},
+                    RoomPid ! {self(), subscribe, FromTime},
                     receive
                         subscribed ->
                             % subscription is ok
                             % now wait for a message
                             receive
-                                Message ->
+                                {MsgTime, Message} ->
                                     {Type, Message} = {ok, Message}
-                            after ?TIMEOUT ->
-                                % we waited too long
-                                {Type, Message} = {error, <<"timeout">>}
+                            after ?GET_TIMEOUT ->
+                                    {Type, Message} = {error, <<"timeout">>}
                             end
-                    after 1000 ->
-                        % subscription failed on time
-                        {Type, Message} = {error, <<"timeout">>}
+                    after ?ACK_TIMEOUT ->
+                            io:format("webloop: can't sub?~n"),
+                            {Type, Message} = {error, <<"timeout">>}
                     end,
 
                     case Type of
