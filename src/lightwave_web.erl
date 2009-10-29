@@ -19,6 +19,7 @@
 
 %% max time to wait a poll before returning a timeout
 -define(GET_TIMEOUT, 120000).
+%%-define(GET_TIMEOUT, 5000).
 
 %% External API
 
@@ -26,11 +27,11 @@
 %% start 
 %%
 start(Options) ->
-    {DocRoot, Options1} = get_option(docroot, Options),
-    Loop = fun (Req) ->
-                   ?MODULE:loop(Req, DocRoot)
-           end,
-    mochiweb_http:start([{name, ?MODULE}, {loop, Loop} | Options1]).
+    {DocRoot, Options1} = getOption(docroot, Options),
+    Handler = fun (Req) ->
+                      ?MODULE:loop(Req, DocRoot)
+              end,
+    mochiweb_http:start([{name, ?MODULE}, {loop, Handler} | Options1]).
 
 stop() ->
     mochiweb_http:stop(?MODULE).
@@ -38,108 +39,130 @@ stop() ->
 %%
 %% flush all history 
 %%
-roomFlush(From, TimeStart, Data) ->
+roomFlush(Client, TickStart, Data) ->
     %%io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
                           %%io:format("Iter: ~p~n", [D]),
-                          {N, Who, Line} = D,
+                          {Tick, Timestamp, Who, Blipp} = D,
                           %%io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
-                          case N+1 > TimeStart of
+                          case Tick+1 > TickStart of
                               true ->
                                   Msg = {message, D},
                                   %%io:format("send: ~p~n", [Msg]),
-                                  From ! Msg;
+                                  Client ! Msg;
                               Any ->
                                   %%io:format("don't send: ~p~n", [Any]),
                                   ok
                           end
                   end, Data).
 
-atoi(A) ->
-    {R,_} = string:to_integer(A),
-    R.
 
+%%
+%% Init room
+%%
 room() ->
-    io:format("room: booting~n"),
+    io:format("room(~p): booting~n", [self()]),
     ?MODULE:room(3,
                  [],
                  [
-                  {1, lightwave, list_to_binary("Initial message")},
-                  {2, lightwave, list_to_binary("Initial message2")}
+                  {1, '2009-01-01 00:00:00', lightwave,
+                   list_to_binary("Initial message")},
+                  {2, '2009-01-01 00:00:01', lightwave,
+                   list_to_binary("Initial message2")}
                  ],
                 dict:new()).
+
 %%
-%% Time: next timestamp in channel
+%% Tick: next tick in channel. Tick *may* be room-specific.
 %% Users: Pids of users subscribed
-%% Data: ordered list of all data in channel {Time, Who, Message}
+%% Data: ordered list of all data in channel {Tick, Timestamp, Who, Message}
 %%
-room(Time, Users, Data, Keys) ->
-    %%io:format("room: looping~n"),
+room(Tick, Users, Data, Keys) ->
+    %%io:format("room(~p) loop: clients=~p~n", [self(), length(Users)]),
+
     receive
-        {From, subscribe, TimeStart} ->
-            %%io:format("room: subscribe ~p ~p~n", [From, TimeStart]),
-            From ! subscribed,
-            roomFlush(From, TimeStart, Data),
-            ?MODULE:room(Time, [From | Users], Data, Keys);
-        {From, unsubscribe} ->
-            %%io:format("room: unsubscribe~n"),
-            From ! unsubscribed,
-            ?MODULE:room(Time, Users -- [From], Data, Keys);
+        %%
+        %% System
+        %%
+        {system, {_From,_Ref}, {debug, {trace,Trace}}} ->
+            io:format("room(~p): Trace started? ~p~n", [self(), Trace]);
+
+        %%
+        %% Debug
+        %%
         {From, getTyped} ->
             %%io:format("room: getTyped~n"),
             From ! Keys,
-            ?MODULE:room(Time, Users, Data, Keys);
+            ?MODULE:room(Tick, Users, Data, Keys);
+
+
+        %%
+        %% Interface
+        %%
+
+        %% Subscribe
+        {From, subscribe, TickStart} ->
+            From ! subscribed,
+            roomFlush(From, TickStart, Data),
+            ?MODULE:room(Tick, [From | Users], Data, Keys);
+
+        %% Unsubscribe
+        {From, unsubscribe} ->
+            From ! unsubscribed,
+            ?MODULE:room(Tick, Users -- [From], Data, Keys);
+
+        %% Type
         {From, type, Who, Typed} ->
             From ! typed,
             lists:foreach(fun(User) ->
                                   User ! {type,
-                                          {Time, Who, Typed}}
+                                          {Tick, nowString(), Who, Typed}}
                           end, Users),
-            ?MODULE:room(Time+1, Users, Data,
-                         dict:store(Who, {Time,Typed}, Keys));
+            ?MODULE:room(Tick+1, Users, Data,
+                         dict:store(Who, {Tick,Typed}, Keys));
+
+        %% Empty Post
+        {From, post, Who, <<>>} ->
+            ?MODULE:room(Tick+1, Users, Data, Keys);
+            
+        %% Post
         {From, post, Who, Message} ->
-            %%io:format("room: post ~p roomlen ~p~n",[Message, length(Users)]),
             From ! posted,
-            case Message of
-                <<>> ->
-                    ?MODULE:room(Time+1,Users,Data,Keys);
-                _ ->
-                    lists:foreach(fun(User) ->
-                                          %% broadcast the message
-                                          User ! {message,
-                                                  {Time, Who, Message}}
-                                  end, Users),
-                    ?MODULE:room(Time+1, Users,
-                                 lists:reverse([{Time,Who,Message}
-                                                | lists:reverse(Data)]), Keys)
-            end;
+            New = {Tick, nowString(), Who, Message},
+            lists:foreach(fun(User) ->
+                                  %% broadcast the message
+                                  User ! {message, New}
+                          end, Users),
+            ?MODULE:room(Tick+1,
+                         Users,
+                         lists:reverse([New | lists:reverse(Data)]),
+                         Keys);
         _ ->
-            io:format("room: unknown message received~n"),
-            ?MODULE:room(Time, Users, Data, Keys)
+            io:format("room(~p): unknown message received~n", [self()]),
+            ?MODULE:room(Tick, Users, Data, Keys)
     end.
 
-get_the_room(_RoomName) ->
-    % does the room exists?
+%%
+%% room finder. Currently only one room, so just return that Pid
+%%
+findRoom(_RoomName) ->
     Pid = whereis(theroom),
     if
-        is_pid(Pid) ->
-            % yup
-            Pid;
+        is_pid(Pid) -> Pid;
         true ->
             % create it
-            NewPid = spawn(fun() ->
-                ?MODULE:room()
-            end),
+            NewPid = spawn(fun() -> ?MODULE:room() end),
             register(theroom, NewPid),
             NewPid
     end.
 
+%%
+%% Return true if the Data list is just a timeout error, else false
+%%
 onlyError(L) ->
-    %%io:format("onlyError(~p)~n", [L]),
-    Len = length(L),
-    case Len of
+    case length(L) of
         1 ->
-            [{S,T,_,_,_}|_] = L,
+            [{S,T,_,_,_,_}|_] = L,
             case {S,T} of
                 {error, timeout} ->
                     true;
@@ -149,11 +172,21 @@ onlyError(L) ->
         _ ->
             false
     end.
-    
 
-getMessages(FromTime) ->
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% getMessages(FromTick)
+%% Get all messages from FromTick and on, ut until the timeout
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+%% Set timeout timer and default return value
+%%
+%% FromTick: First tick that the client is interested in
+%%
+getMessages(FromTick) ->
     {ok, TRef} = timer:send_after(?GET_TIMEOUT, done),
-    R = getMessages(FromTime, [{error, timeout, lightwave, <<"timeout">>, 0}]),
+    R = getMessages(FromTick, [{error, timeout, 1, nowString(),
+                                lightwave, <<"timeout">>}]),
     {ok, cancel} = timer:cancel(TRef),
     receive
         done ->
@@ -164,34 +197,34 @@ getMessages(FromTime) ->
     lists:reverse(R).
 
 %%
-%% FromTime is what the user *wants*, not what they last got
+%% FromTick: First tick the user is interested in
 %%
-getMessages(FromTime, Data) ->
+getMessages(FromTick, Data) ->
     %%io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
         done ->
             Data;
-        {Type, {MsgTime, Who, Message}} ->
-            case MsgTime < FromTime of
+        {Type, {Tick, Timestamp, Who, Message}} ->
+            case Tick < FromTick of
                 true ->
                     %%io:format("Ignored ~p~n", [MsgTime]),
-                    getMessages(FromTime, Data);
+                    getMessages(FromTick, Data);
                 _ ->
                     %%io:format("Added ~p to ~p~n", [Message, Data]),
-                    New = {ok, Type, Who, Message, MsgTime},
+                    New = {ok, Type, Tick, Timestamp, Who, Message},
                     timer:send_after(10, idone),
                     case onlyError(Data) of
                         true ->
-                            getMessages(MsgTime+1, [New]);
+                            getMessages(Tick+1, [New]);
                         false ->
-                            getMessages(MsgTime+1, [New | Data])
+                            getMessages(Tick+1, [New | Data])
                     end
             end;
         idone ->
             %% check for false alarm (lingering idone from previous request)
             case onlyError(Data) of
                 true ->
-                    getMessages(FromTime, Data);
+                    getMessages(FromTick, Data);
                 false ->
                     Data
             end;
@@ -200,63 +233,88 @@ getMessages(FromTime, Data) ->
             Data
     end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% contructReply()
+%%
+%% Take the output of getMessages() and create a structure suitable for 
+%% json encoding.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+%% Entry
+%%
 constructReply(Messages) ->
     constructReply(Messages, []).
-constructReply([], Ret) ->
-    Ret2 = lists:reverse(Ret),
-    %%io:format("Encoding: ~p~n", [Ret2]),
-    Ret2;
 
+%%
+%% All done, reverse it.
+%%
+constructReply([], Ret) ->
+    lists:reverse(Ret);
+
+%%
+%% Create jsonable entry
+%%
 constructReply(Messages, Ret) ->
     [H|T] = Messages,
-    {Status, Type, Who, Message, MsgTime} = H,
+    {Status, Type, Tick, Timestamp, Who, Message} = H,
     Cur = {struct, [
                     {status, Status},
                     {type, Type},
                     {who, Who},
                     {message, Message},
-                    {time, MsgTime}
+                    {timestamp, Timestamp},
+                    {tick, Tick}
                    ]},
     case Status of
+        %% on error, just give up. We don't want to return both error and
+        %% data in same request
         error ->
             constructReply([], [Cur]);
         _ ->
             constructReply(T, [Cur | Ret])
     end.
 
+%%
+%%
+%%
 unsubscribe(RoomPid) ->
     RoomPid ! {self(), unsubscribe},
     receive
         unsubscribed ->
             ok
     after ?ACK_TIMEOUT ->
-            %% FIXME: log unsubscribe timeout
-            ok
+            io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
+                      [self(),RoomPid])
     end.
 
 
+%%
+%% FIXME: parse out room name
+%%
 handleGET(Req, DocRoot) ->
     "/foo/" ++ Path = Req:get(path),
     Room = "foo",
     case Path of
         "get/" ++ FromTimeS ->
-            FromTime = atoi(FromTimeS),
-            RoomPid = get_the_room(Room),
+            FromTime = list_to_integer(FromTimeS),
+            RoomPid = findRoom(Room),
             RoomPid ! {self(), subscribe, FromTime},
             receive
                 subscribed ->
                     Msgs = getMessages(FromTime),
-                    %%io:format("webloop: messages: ~p~n", [Msgs]),
                     Rep = constructReply(Msgs),
                     unsubscribe(RoomPid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
             after ?ACK_TIMEOUT ->
-                    io:format("webloop: can't sub?~n"),
+                    io:format("handleGET(~p): FIXME: sub timeout to ~p~n",
+                              [self(), RoomPid]),
                     unsubscribe(RoomPid),
                     Req:ok({"text/javascript", mochijson2:encode({
                             struct, [
                                      {"status", error},
-                                     {"message", "blaha"}
+                                     {"message",
+                                      <<"Failed to subscribe to room">>}
                                     ]})
                            })
             end;
@@ -264,17 +322,21 @@ handleGET(Req, DocRoot) ->
             Req:serve_file(Path, DocRoot)
     end.
 
+%%
+%%
+%%
 handlePOST(Req, DocRoot) ->
     "/foo/" ++ Path = Req:get(path),
     Room = "foo",
     case Path of
+        %% Client is typing
         "type" ->
             %%io:format("POST type~n"),
             Data = Req:parse_post(),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             PostKeys = list_to_binary(proplists:get_value("keys", Data)),
             
-            RoomPid = get_the_room(Room),
+            RoomPid = findRoom(Room),
             %% post
             RoomPid ! {self(),
                     type,
@@ -295,14 +357,15 @@ handlePOST(Req, DocRoot) ->
                                     ]
                         })
                    });
-            
+
+        %% Client submitted a line
         "chat" ->
             %%io:format("POST chat~n"),
             Data = Req:parse_post(),
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             Room = "foo",
-            RoomPid = get_the_room(Room),
+            RoomPid = findRoom(Room),
             %% post
             RoomPid ! {self(),
                     post,
@@ -330,6 +393,9 @@ handlePOST(Req, DocRoot) ->
             Req:not_found()
     end.
 
+%%
+%% entry point for new requests
+%%
 loop(Req, DocRoot) ->
     case Req:get(method) of
 
@@ -344,7 +410,21 @@ loop(Req, DocRoot) ->
             Req:respond({501, [], []})
     end.
 
-%% Internal API
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% helper functions
+%%
 
-get_option(Option, Options) ->
+%%
+%%
+%%
+getOption(Option, Options) ->
     {proplists:get_value(Option, Options), proplists:delete(Option, Options)}.
+
+
+%%
+%% FIXME: force fixed-width
+%%
+nowString() ->
+    {{Year,Month,Day},{Hour,Min,Seconds}} = erlang:universaltime(),
+    list_to_binary(io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B",
+                                 [Year,Month,Day,Hour,Min,Seconds])).
