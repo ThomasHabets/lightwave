@@ -76,15 +76,21 @@ room(Time, Users, Data, Keys) ->
         {From, type, Who, Typed} ->
             ?MODULE:room(Time, Users, Data, [Typed | Keys]);
         {From, post, Who, Message} ->
-            io:format("room: post~n"),
+            io:format("room: post ~p roomlen ~p~n", [Message, length(Users)]),
             From ! posted,
-            lists:foreach(fun(User) ->
-                    % broadcast the message
-                    User ! {message, {Time, Who, Message}}
-                end, Users),
-            ?MODULE:room(Time+1, Users,
-                         lists:reverse([{Time,Who,Message}
-                                        | lists:reverse(Data)]), Keys);
+            case Message of
+                <<>> ->
+                    ?MODULE:room(Time+1,Users,Data,Keys);
+                _ ->
+                    lists:foreach(fun(User) ->
+                                          %% broadcast the message
+                                          User ! {message,
+                                                  {Time, Who, Message}}
+                                  end, Users),
+                    ?MODULE:room(Time+1, Users,
+                                 lists:reverse([{Time,Who,Message}
+                                                | lists:reverse(Data)]), Keys)
+            end;
         _ ->
             io:format("room: unknown message received~n"),
             ?MODULE:room(Time, Users, Data, Keys)
@@ -133,8 +139,11 @@ getMessages(FromTime) ->
     after 10 ->  %% epsilon. Either it's in the queue or it never will be (?)
             ok
     end,
-    R.
+    lists:reverse(R).
 
+%%
+%% FromTime is what the user *wants*, not what they last got
+%%
 getMessages(FromTime, Data) ->
     io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
@@ -153,14 +162,14 @@ getMessages(FromTime, Data) ->
                     io:format("Ignored ~p~n", [MsgTime]),
                     getMessages(FromTime, Data);
                 _ ->
-                    io:format("Added ~p~n", [Message]),
+                    io:format("Added ~p to ~p~n", [Message, Data]),
                     New = {ok, Type, Who, Message, MsgTime},
                     timer:send_after(10, idone),
                     case onlyError(Data) of
-                        false ->
-                            getMessages(FromTime, [New | Data]);
                         true ->
-                            getMessages(FromTime, [New])
+                            getMessages(MsgTime+1, [New]);
+                        false ->
+                            getMessages(MsgTime+1, [New | Data])
                     end
             end;
         Any ->
@@ -192,6 +201,17 @@ constructReply(Messages, Ret) ->
             constructReply(T, [Cur | Ret])
     end.
 
+unsubscribe(RoomPid) ->
+    RoomPid ! {self(), unsubscribe},
+    receive
+        unsubscribed ->
+            ok
+    after ?ACK_TIMEOUT ->
+            %% FIXME: log unsubscribe timeout
+            ok
+    end.
+
+
 handleGET(Req, DocRoot) ->
     "/" ++ Path = Req:get(path),
     case Path of
@@ -205,19 +225,12 @@ handleGET(Req, DocRoot) ->
                     Msgs = getMessages(FromTime),
                     io:format("webloop: messages: ~p~n", [Msgs]),
                     Rep = constructReply(Msgs),
+                    unsubscribe(RoomPid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
             after ?ACK_TIMEOUT ->
                     io:format("webloop: can't sub?~n"),
-                    RoomPid ! {self(), unsubscribe},
-                    receive
-                        unsubscribed ->
-                            ok
-                    after ?ACK_TIMEOUT ->
-                            %% FIXME: log unsubscribe timeout
-                            ok
-                    end,
-                    Req:ok({"text/javascript", mochijson2:encode(
-                                                 {
+                    unsubscribe(RoomPid),
+                    Req:ok({"text/javascript", mochijson2:encode({
                             struct, [
                                      {"status", error},
                                      {"message", "blaha"}
