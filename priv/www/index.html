@@ -71,6 +71,22 @@ pre i *{color:#090;}
     </div>
 <script type="text/javascript" src="jquery-1.2.3.min.js"></script>
 <script type="text/javascript" id="script">
+function dumpProps(obj, parent) {
+   // Go through all the properties of the passed-in object
+   for (var i in obj) {
+      // if a parent (2nd parameter) was passed in, then use that to
+      // build the message. Message includes i (the object's property name)
+      // then the object's property value on a new line
+      if (parent) { var msg = parent + "." + i + "\n" + obj[i]; } else { var msg = i + "\n" + obj[i]; }
+      // Display the message. If the user clicks "OK", then continue. If they
+      // click "CANCEL" then quit this level of recursion
+      if (!confirm(msg)) { return; }
+      // If this property (i) is an object, then recursively process the object
+      if (typeof obj[i] == "object") {
+         if (parent) { dumpProps(obj[i], parent + "." + i); } else { dumpProps(obj[i], i); }
+      }
+   }
+}
 (function($) {
     $(document).ready(function() {
         var url = "/chat";
@@ -103,7 +119,7 @@ pre i *{color:#090;}
                 url: url + "/foo/" + curChanTime,
                 dataType: "json",
                 method: "get",
-                success: function(data) {
+                success: function(arr) {
                     if(data.status == "ok") {
                         curChanTime = data.time + 1;
                         $(self).triggerHandler("message", [data]);
@@ -111,7 +127,11 @@ pre i *{color:#090;}
                         $(self).triggerHandler("error", [data.error]);
                     } else {
                         alert("epic fail!");
+                        alert(arr.length);
+                        //dumpProps(arr);
+                        husnteoauhtoa;
                     }
+                    //});
                 }
             });
         }).triggerHandler("poll");

@@ -46,8 +46,6 @@ roomFlush(From, TimeStart, Data) ->
 atoi(A) ->
     {R,_} = string:to_integer(A),
     R.
-itoa(I) ->
-    lists:flatten(io_lib:format("~p", [I])).
 
 room() ->
     io:format("room: booting~n"),
@@ -108,24 +106,66 @@ get_the_room(_RoomName) ->
             NewPid
     end.
 
+onlyError(L) ->
+    io:format("onlyError(~p)~n", [L]),
+    Len = length(L),
+    case Len of
+        1 ->
+            [{S,T,_,_,_}|_] = L,
+            case {S,T} of
+                {error, timeout} ->
+                    true;
+                _ ->
+                    false
+            end;
+        _ ->
+            false
+    end.
+    
+
 getMessages(FromTime) ->
-    getMessages(FromTime, [{error, error, lightwave, <<"timeout">>, 0}]).
-getMessages(FromTime, TimeoutError) ->
+    {ok, TRef} = timer:send_after(?GET_TIMEOUT, done),
+    R = getMessages(FromTime, [{error, timeout, lightwave, <<"timeout">>, 0}]),
+    {ok, cancel} = timer:cancel(TRef),
+    receive
+        done ->
+            ok
+    after 10 ->  %% epsilon. Either it's in the queue or it never will be (?)
+            ok
+    end,
+    R.
+
+getMessages(FromTime, Data) ->
     io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
+        done ->
+            Data;
+        idone ->
+            case onlyError(Data) of
+                true ->
+                    getMessages(FromTime, Data);
+                false ->
+                    Data
+            end;
         {Type, {MsgTime, Who, Message}} ->
             case MsgTime < FromTime of
                 true ->
                     io:format("Ignored ~p~n", [MsgTime]),
-                    getMessages(FromTime);
+                    getMessages(FromTime, Data);
                 _ ->
-                    [{ok, Type, Who, Message, MsgTime}
-                     | getMessages(FromTime, [])]
+                    io:format("Added ~p~n", [Message]),
+                    New = {ok, Type, Who, Message, MsgTime},
+                    timer:send_after(10, idone),
+                    case onlyError(Data) of
+                        false ->
+                            getMessages(FromTime, [New | Data]);
+                        true ->
+                            getMessages(FromTime, [New])
+                    end
             end;
         Any ->
-            io:format("invalid message sent to getMessage(): ~p~n", [Any])
-    after 100 ->
-            TimeoutError
+            io:format("invalid message sent to getMessage(): ~p~n", [Any]),
+            Data
     end.
 
 constructReply(Messages) ->
