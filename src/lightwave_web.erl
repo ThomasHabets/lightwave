@@ -1,21 +1,30 @@
-%% @author author <author@example.com>
-%% @copyright YYYY author.
-
+%% lightwave/src/lightwave_web.erl
+%%
+%% @author author <thomas@habets.pp.se>
+%% @copyright 2009 Thomas Habets
+%%
 %% @doc Web server for lightwave.
-
+%%
 -module(lightwave_web).
--author('author <author@example.com>').
+-author('Thomas Habets <thomas@habets.pp.se>').
 
--export([start/1, stop/0, loop/2,
-         room/0, room/4]).
+-export([start/1,
+         stop/0,
+         loop/2,
+         room/0,
+         room/4]).
 
-% timeout for internal messages that should just be acked
+%% timeout for internal messages that should just be acked
 -define(ACK_TIMEOUT, 100).
 
--define(GET_TIMEOUT, 30000).
+%% max time to wait a poll before returning a timeout
+-define(GET_TIMEOUT, 120000).
 
 %% External API
 
+%%
+%% start 
+%%
 start(Options) ->
     {DocRoot, Options1} = get_option(docroot, Options),
     Loop = fun (Req) ->
@@ -26,8 +35,11 @@ start(Options) ->
 stop() ->
     mochiweb_http:stop(?MODULE).
 
+%%
+%% flush all history 
+%%
 roomFlush(From, TimeStart, Data) ->
-    io:format("Flushing from ~p~n", [TimeStart]),
+    %%io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
                           %%io:format("Iter: ~p~n", [D]),
                           {N, Who, Line} = D,
@@ -74,7 +86,7 @@ room(Time, Users, Data, Keys) ->
             From ! unsubscribed,
             ?MODULE:room(Time, Users -- [From], Data, Keys);
         {From, getTyped} ->
-            io:format("room: getTyped~n"),
+            %%io:format("room: getTyped~n"),
             From ! Keys,
             ?MODULE:room(Time, Users, Data, Keys);
         {From, type, Who, Typed} ->
@@ -123,7 +135,7 @@ get_the_room(_RoomName) ->
     end.
 
 onlyError(L) ->
-    io:format("onlyError(~p)~n", [L]),
+    %%io:format("onlyError(~p)~n", [L]),
     Len = length(L),
     case Len of
         1 ->
@@ -155,7 +167,7 @@ getMessages(FromTime) ->
 %% FromTime is what the user *wants*, not what they last got
 %%
 getMessages(FromTime, Data) ->
-    io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
+    %%io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
         done ->
             Data;
@@ -165,7 +177,7 @@ getMessages(FromTime, Data) ->
                     %%io:format("Ignored ~p~n", [MsgTime]),
                     getMessages(FromTime, Data);
                 _ ->
-                    io:format("Added ~p to ~p~n", [Message, Data]),
+                    %%io:format("Added ~p to ~p~n", [Message, Data]),
                     New = {ok, Type, Who, Message, MsgTime},
                     timer:send_after(10, idone),
                     case onlyError(Data) of
@@ -192,7 +204,7 @@ constructReply(Messages) ->
     constructReply(Messages, []).
 constructReply([], Ret) ->
     Ret2 = lists:reverse(Ret),
-    io:format("Encoding: ~p~n", [Ret2]),
+    %%io:format("Encoding: ~p~n", [Ret2]),
     Ret2;
 
 constructReply(Messages, Ret) ->
@@ -234,7 +246,7 @@ handleGET(Req, DocRoot) ->
             receive
                 subscribed ->
                     Msgs = getMessages(FromTime),
-                    io:format("webloop: messages: ~p~n", [Msgs]),
+                    %%io:format("webloop: messages: ~p~n", [Msgs]),
                     Rep = constructReply(Msgs),
                     unsubscribe(RoomPid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
@@ -285,7 +297,7 @@ handlePOST(Req, DocRoot) ->
                    });
             
         "chat" ->
-            io:format("POST chat~n"),
+            %%io:format("POST chat~n"),
             Data = Req:parse_post(),
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
