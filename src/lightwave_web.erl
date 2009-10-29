@@ -11,8 +11,8 @@
 -export([start/1,
          stop/0,
          loop/2,
-         room/0,
-         room/4]).
+         wave/0,
+         wave/4]).
 
 %% timeout for internal messages that should just be acked
 -define(ACK_TIMEOUT, 100).
@@ -39,7 +39,7 @@ stop() ->
 %%
 %% flush all history 
 %%
-roomFlush(Client, TickStart, Data) ->
+waveFlush(Client, TickStart, Data) ->
     %%io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
                           %%io:format("Iter: ~p~n", [D]),
@@ -58,11 +58,11 @@ roomFlush(Client, TickStart, Data) ->
 
 
 %%
-%% Init room
+%% Init wave
 %%
-room() ->
-    io:format("room(~p): booting~n", [self()]),
-    ?MODULE:room(3,
+wave() ->
+    io:format("wave(~p): booting~n", [self()]),
+    ?MODULE:wave(3,
                  [],
                  [
                   {1, '2009-01-01 00:00:00', lightwave,
@@ -73,27 +73,27 @@ room() ->
                 dict:new()).
 
 %%
-%% Tick: next tick in channel. Tick *may* be room-specific.
+%% Tick: next tick in channel. Tick *may* be wave-specific.
 %% Users: Pids of users subscribed
 %% Data: ordered list of all data in channel {Tick, Timestamp, Who, Message}
 %%
-room(Tick, Users, Data, Keys) ->
-    %%io:format("room(~p) loop: clients=~p~n", [self(), length(Users)]),
+wave(Tick, Users, Data, Keys) ->
+    %%io:format("wave(~p) loop: clients=~p~n", [self(), length(Users)]),
 
     receive
         %%
         %% System
         %%
         {system, {_From,_Ref}, {debug, {trace,Trace}}} ->
-            io:format("room(~p): Trace started? ~p~n", [self(), Trace]);
+            io:format("wave(~p): Trace started? ~p~n", [self(), Trace]);
 
         %%
         %% Debug
         %%
         {From, getTyped} ->
-            %%io:format("room: getTyped~n"),
+            %%io:format("wave: getTyped~n"),
             From ! Keys,
-            ?MODULE:room(Tick, Users, Data, Keys);
+            ?MODULE:wave(Tick, Users, Data, Keys);
 
 
         %%
@@ -103,13 +103,13 @@ room(Tick, Users, Data, Keys) ->
         %% Subscribe
         {From, subscribe, TickStart} ->
             From ! subscribed,
-            roomFlush(From, TickStart, Data),
-            ?MODULE:room(Tick, [From | Users], Data, Keys);
+            waveFlush(From, TickStart, Data),
+            ?MODULE:wave(Tick, [From | Users], Data, Keys);
 
         %% Unsubscribe
         {From, unsubscribe} ->
             From ! unsubscribed,
-            ?MODULE:room(Tick, Users -- [From], Data, Keys);
+            ?MODULE:wave(Tick, Users -- [From], Data, Keys);
 
         %% Type
         {From, type, Who, Typed} ->
@@ -118,12 +118,12 @@ room(Tick, Users, Data, Keys) ->
                                   User ! {type,
                                           {Tick, nowString(), Who, Typed}}
                           end, Users),
-            ?MODULE:room(Tick+1, Users, Data,
+            ?MODULE:wave(Tick+1, Users, Data,
                          dict:store(Who, {Tick,Typed}, Keys));
 
         %% Empty Post
         {From, post, Who, <<>>} ->
-            ?MODULE:room(Tick+1, Users, Data, Keys);
+            ?MODULE:wave(Tick+1, Users, Data, Keys);
             
         %% Post
         {From, post, Who, Message} ->
@@ -133,26 +133,26 @@ room(Tick, Users, Data, Keys) ->
                                   %% broadcast the message
                                   User ! {message, New}
                           end, Users),
-            ?MODULE:room(Tick+1,
+            ?MODULE:wave(Tick+1,
                          Users,
                          lists:reverse([New | lists:reverse(Data)]),
                          Keys);
         _ ->
-            io:format("room(~p): unknown message received~n", [self()]),
-            ?MODULE:room(Tick, Users, Data, Keys)
+            io:format("wave(~p): unknown message received~n", [self()]),
+            ?MODULE:wave(Tick, Users, Data, Keys)
     end.
 
 %%
-%% room finder. Currently only one room, so just return that Pid
+%% wave finder. Currently only one wave, so just return that Pid
 %%
-findRoom(_RoomName) ->
-    Pid = whereis(theroom),
+findWave(_WaveName) ->
+    Pid = whereis(thewave),
     if
         is_pid(Pid) -> Pid;
         true ->
             % create it
-            NewPid = spawn(fun() -> ?MODULE:room() end),
-            register(theroom, NewPid),
+            NewPid = spawn(fun() -> ?MODULE:wave() end),
+            register(thewave, NewPid),
             NewPid
     end.
 
@@ -278,43 +278,43 @@ constructReply(Messages, Ret) ->
 %%
 %%
 %%
-unsubscribe(RoomPid) ->
-    RoomPid ! {self(), unsubscribe},
+unsubscribe(WavePid) ->
+    WavePid ! {self(), unsubscribe},
     receive
         unsubscribed ->
             ok
     after ?ACK_TIMEOUT ->
             io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
-                      [self(),RoomPid])
+                      [self(),WavePid])
     end.
 
 
 %%
-%% FIXME: parse out room name
+%% FIXME: parse out wave name
 %%
 handleGET(Req, DocRoot) ->
     "/foo/" ++ Path = Req:get(path),
-    Room = "foo",
+    Wave = "foo",
     case Path of
         "get/" ++ FromTimeS ->
             FromTime = list_to_integer(FromTimeS),
-            RoomPid = findRoom(Room),
-            RoomPid ! {self(), subscribe, FromTime},
+            WavePid = findWave(Wave),
+            WavePid ! {self(), subscribe, FromTime},
             receive
                 subscribed ->
                     Msgs = getMessages(FromTime),
                     Rep = constructReply(Msgs),
-                    unsubscribe(RoomPid),
+                    unsubscribe(WavePid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
             after ?ACK_TIMEOUT ->
                     io:format("handleGET(~p): FIXME: sub timeout to ~p~n",
-                              [self(), RoomPid]),
-                    unsubscribe(RoomPid),
+                              [self(), WavePid]),
+                    unsubscribe(WavePid),
                     Req:ok({"text/javascript", mochijson2:encode({
                             struct, [
                                      {"status", error},
                                      {"message",
-                                      <<"Failed to subscribe to room">>}
+                                      <<"Failed to subscribe to wave">>}
                                     ]})
                            })
             end;
@@ -327,7 +327,7 @@ handleGET(Req, DocRoot) ->
 %%
 handlePOST(Req, DocRoot) ->
     "/foo/" ++ Path = Req:get(path),
-    Room = "foo",
+    Wave = "foo",
     case Path of
         %% Client is typing
         "type" ->
@@ -336,9 +336,9 @@ handlePOST(Req, DocRoot) ->
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             PostKeys = list_to_binary(proplists:get_value("keys", Data)),
             
-            RoomPid = findRoom(Room),
+            WavePid = findWave(Wave),
             %% post
-            RoomPid ! {self(),
+            WavePid ! {self(),
                     type,
                     PostWho,
                     PostKeys
@@ -364,10 +364,10 @@ handlePOST(Req, DocRoot) ->
             Data = Req:parse_post(),
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
-            Room = "foo",
-            RoomPid = findRoom(Room),
+            Wave = "foo",
+            WavePid = findWave(Wave),
             %% post
-            RoomPid ! {self(),
+            WavePid ! {self(),
                     post,
                     PostWho,
                     PostMessage
