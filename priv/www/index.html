@@ -32,6 +32,7 @@ pre i *{color:#090;}
 #chat {border:2px solid #000;width:100%;height:10em;overflow:auto;}
 #chat ol {margin:0px;padding:5px;list-style:none;}
 #chat li {border-bottom:1px solid #eee;padding:5px 10px;}
+#chat li.typer {border-bottom:1px solid #eee;padding:5px 10px;background-color: #aaa; }
 #chat .error {color:#f00;}
 
 #chatter {padding:5px;}
@@ -87,27 +88,48 @@ function dumpProps(obj, parent) {
       }
    }
 }
+var url = "/foo/";
 (function($) {
     $(document).ready(function() {
-        var url = "/foo/";
         var curChanTime = "1";
 
         $("#chat").bind("message", function(event, message) {
             $(this).triggerHandler("append", [message]);
 
+        }).bind("type", function(event, keys) {
+            $(this).triggerHandler("appendType", [keys]);
         }).bind("error", function(event, message) {
-            /*$(this).triggerHandler("append",[
+            $(this).triggerHandler("append",[
                 [
                     '<strong class="error">',
                     message,
                     '</strong>'
                 ].join("")
-            ]);//*/
+            ]);
             $(this).triggerHandler("poll");
             
         }).bind("append", function(event, data) {
+            $(".typer", this).each(function(){
+              if ($(this).attr("data") == data.who) {
+                $(this).remove();
+              }
+            });
             $("ol", this).append([
                 '<li>','<span class="who">',
+                data.who, '</span>', ":" + data.message,
+                "</li>"].join(""));
+            this.scrollTop = $("ol", this).get(0).offsetHeight;
+        }).bind("appendType", function(event, data) {
+            $(".typer", this).each(function(){
+              if ($(this).attr("data") == data.who) {
+                $(this).remove();
+              }
+            });
+            if (data.message == "") {
+              return;
+            }
+            $("ol", this).append([
+                '<li class="typer" data="'+data.who+'">','<span class="who">',
                 data.who, '</span>', ":" + data.message,
                 "</li>"].join(""));
             this.scrollTop = $("ol", this).get(0).offsetHeight;
@@ -124,7 +146,11 @@ function dumpProps(obj, parent) {
                       data = arr[i];
                       if(data.status == "ok") {
                           curChanTime = data.time + 1;
-                          $(self).triggerHandler("message", [data]);
+                          if (data.type == "message") {
+                            $(self).triggerHandler("message", [data]);
+                          } else if (data.type == "type") {
+                            $(self).triggerHandler("type", [data]);
+                          }
                           ok = 1
                       } else if(data.status == "error") {
                           $(self).triggerHandler("error", [data.error]);
@@ -160,23 +186,10 @@ function dumpProps(obj, parent) {
             return false;
         });
 
-        $("#message").keyup(function(event){
-            $.ajax({
-                url: url + "type",
-                dataType: "json",
-                type: "POST",
-                data: "keys="+$("#message").val()+"&who="+$("#who").val(),
-                success: function(data) {
-                    var chat = $("#chat");
-                    if(data.status == "ok") {
-                        chat.triggerHandler("posted", [data.message]);
-                    } else if(data.status == "error") {
-                        chat.triggerHandler("error", [data.error]);
-                    } else {
-                        alert("epic fail!");
-                    }
-                }
-            });
+        $("#message").keyup(function(event) {
+            if (!typeTimer) {
+              typeTimer = setTimeout('tellType()', 100);
+            }
             return false;
         });
 
@@ -184,6 +197,32 @@ function dumpProps(obj, parent) {
         $("#message").attr("autocomplete", "off").focus();
     });
 })(jQuery);
+
+typeTimer = 0;
+function tellTypeSuccess(data)
+{
+  var chat = $("#chat");
+  if(data.status == "ok") {
+    chat.triggerHandler("posted", [data.message]);
+  } else if(data.status == "error") {
+    chat.triggerHandler("error", [data.error]);
+  } else {
+    alert("epic fail!");
+  }
+}
+
+function tellType()
+{
+  clearTimeout(typeTimer);
+  typeTimer = 0;
+  $.ajax({
+    url: url + "type",
+    dataType: "json",
+    type: "POST",
+    data: "keys="+$("#message").val()+"&who="+$("#who").val(),
+    success: tellTypeSuccess
+  });
+}
 
 // Show me the source easter egg.
 $("#header").

@@ -29,16 +29,16 @@ stop() ->
 roomFlush(From, TimeStart, Data) ->
     io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
-                          io:format("Iter: ~p~n", [D]),
+                          %%io:format("Iter: ~p~n", [D]),
                           {N, Who, Line} = D,
-                          io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
+                          %%io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
                           case N+1 > TimeStart of
                               true ->
                                   Msg = {message, D},
-                                  io:format("send: ~p~n", [Msg]),
+                                  %%io:format("send: ~p~n", [Msg]),
                                   From ! Msg;
                               Any ->
-                                  io:format("don't send: ~p~n", [Any]),
+                                  %%io:format("don't send: ~p~n", [Any]),
                                   ok
                           end
                   end, Data).
@@ -55,28 +55,38 @@ room() ->
                   {1, lightwave, list_to_binary("Initial message")},
                   {2, lightwave, list_to_binary("Initial message2")}
                  ],
-                []).
+                dict:new()).
 %%
 %% Time: next timestamp in channel
 %% Users: Pids of users subscribed
 %% Data: ordered list of all data in channel {Time, Who, Message}
 %%
 room(Time, Users, Data, Keys) ->
-    io:format("room: looping~n"),
+    %%io:format("room: looping~n"),
     receive
         {From, subscribe, TimeStart} ->
-            io:format("room: subscribe ~p ~p~n", [From, TimeStart]),
+            %%io:format("room: subscribe ~p ~p~n", [From, TimeStart]),
             From ! subscribed,
             roomFlush(From, TimeStart, Data),
             ?MODULE:room(Time, [From | Users], Data, Keys);
         {From, unsubscribe} ->
-            io:format("room: unsubscribe~n"),
+            %%io:format("room: unsubscribe~n"),
             From ! unsubscribed,
             ?MODULE:room(Time, Users -- [From], Data, Keys);
+        {From, getTyped} ->
+            io:format("room: getTyped~n"),
+            From ! Keys,
+            ?MODULE:room(Time, Users, Data, Keys);
         {From, type, Who, Typed} ->
-            ?MODULE:room(Time, Users, Data, [Typed | Keys]);
+            From ! typed,
+            lists:foreach(fun(User) ->
+                                  User ! {type,
+                                          {Time, Who, Typed}}
+                          end, Users),
+            ?MODULE:room(Time+1, Users, Data,
+                         dict:store(Who, {Time,Typed}, Keys));
         {From, post, Who, Message} ->
-            io:format("room: post ~p roomlen ~p~n", [Message, length(Users)]),
+            %%io:format("room: post ~p roomlen ~p~n",[Message, length(Users)]),
             From ! posted,
             case Message of
                 <<>> ->
@@ -152,7 +162,7 @@ getMessages(FromTime, Data) ->
         {Type, {MsgTime, Who, Message}} ->
             case MsgTime < FromTime of
                 true ->
-                    io:format("Ignored ~p~n", [MsgTime]),
+                    %%io:format("Ignored ~p~n", [MsgTime]),
                     getMessages(FromTime, Data);
                 _ ->
                     io:format("Added ~p to ~p~n", [Message, Data]),
@@ -247,7 +257,7 @@ handlePOST(Req, DocRoot) ->
     Room = "foo",
     case Path of
         "type" ->
-            io:format("POST type~n"),
+            %%io:format("POST type~n"),
             Data = Req:parse_post(),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             PostKeys = list_to_binary(proplists:get_value("keys", Data)),
