@@ -89,7 +89,7 @@ function dumpProps(obj, parent) {
 }
 (function($) {
     $(document).ready(function() {
-        var url = "/chat";
+        var url = "/foo/";
         var curChanTime = "1";
 
         $("#chat").bind("message", function(event, message) {
@@ -115,7 +115,7 @@ function dumpProps(obj, parent) {
         }).bind("poll", function(event) {
             var self = this;
             $.ajax({
-                url: url + "/foo/" + curChanTime,
+                url: url + "get/" + curChanTime,
                 dataType: "json",
                 method: "get",
                 success: function(arr) {
@@ -141,7 +141,7 @@ function dumpProps(obj, parent) {
 
         $("#chatter").submit(function(event){
             $.ajax({
-                url: url,
+                url: url + "chat",
                 dataType: "json",
                 type: "POST",
                 data: "message="+$("#message").val()+"&who="+$("#who").val(),
@@ -159,13 +159,13 @@ function dumpProps(obj, parent) {
             });
             return false;
         });
-/*
+
         $("#message").keyup(function(event){
             $.ajax({
-                url: url,
+                url: url + "type",
                 dataType: "json",
                 type: "POST",
-                data: "message="+$("#message").val()+"&who="+$("#who").val(),
+                data: "keys="+$("#message").val()+"&who="+$("#who").val(),
                 success: function(data) {
                     var chat = $("#chat");
                     if(data.status == "ok") {
@@ -179,7 +179,7 @@ function dumpProps(obj, parent) {
             });
             return false;
         });
-*/
+
 
         $("#message").attr("autocomplete", "off").focus();
     });

@@ -149,13 +149,6 @@ getMessages(FromTime, Data) ->
     receive
         done ->
             Data;
-        idone ->
-            case onlyError(Data) of
-                true ->
-                    getMessages(FromTime, Data);
-                false ->
-                    Data
-            end;
         {Type, {MsgTime, Who, Message}} ->
             case MsgTime < FromTime of
                 true ->
@@ -171,6 +164,14 @@ getMessages(FromTime, Data) ->
                         false ->
                             getMessages(MsgTime+1, [New | Data])
                     end
+            end;
+        idone ->
+            %% check for false alarm (lingering idone from previous request)
+            case onlyError(Data) of
+                true ->
+                    getMessages(FromTime, Data);
+                false ->
+                    Data
             end;
         Any ->
             io:format("invalid message sent to getMessage(): ~p~n", [Any]),
@@ -213,11 +214,11 @@ unsubscribe(RoomPid) ->
 
 
 handleGET(Req, DocRoot) ->
-    "/" ++ Path = Req:get(path),
+    "/foo/" ++ Path = Req:get(path),
+    Room = "foo",
     case Path of
-        "chat/foo/" ++ FromTimeS ->
+        "get/" ++ FromTimeS ->
             FromTime = atoi(FromTimeS),
-            Room = "foo",
             RoomPid = get_the_room(Room),
             RoomPid ! {self(), subscribe, FromTime},
             receive
@@ -242,14 +243,14 @@ handleGET(Req, DocRoot) ->
     end.
 
 handlePOST(Req, DocRoot) ->
-    "/" ++ Path = Req:get(path),
+    "/foo/" ++ Path = Req:get(path),
+    Room = "foo",
     case Path of
-        "type/" ++ Room ->
+        "type" ->
             io:format("POST type~n"),
             Data = Req:parse_post(),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             PostKeys = list_to_binary(proplists:get_value("keys", Data)),
-            Room = "foo",
             
             RoomPid = get_the_room(Room),
             %% post
@@ -264,7 +265,14 @@ handlePOST(Req, DocRoot) ->
                     {Status, Message} = {ok, <<"typed">>}
             after ?ACK_TIMEOUT ->
                     {Status, Message} = {error, <<"timeout">>}
-            end;
+            end,
+            Req:ok({"text/javascript", mochijson2:encode({
+                            struct, [
+                                     {status, ok},
+                                     {message, typed}
+                                    ]
+                        })
+                   });
             
         "chat" ->
             io:format("POST chat~n"),
