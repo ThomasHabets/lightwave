@@ -37,21 +37,24 @@ stop() ->
     mochiweb_http:stop(?MODULE).
 
 %%
-%% flush all history 
+%% Send the whole history of the wave to the client
+%%
+%% Client: Process to send the data
+%% Tickstart: only send blips newer than this
+%% Data: full data history of wave
 %%
 waveFlush(Client, TickStart, Data) ->
     %%io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
                           %%io:format("Iter: ~p~n", [D]),
-                          {Tick, Timestamp, Who, Blipp} = D,
+                          {Tick, _, _, _} = D,
                           %%io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
                           case Tick+1 > TickStart of
                               true ->
                                   Msg = {message, D},
                                   %%io:format("send: ~p~n", [Msg]),
                                   Client ! Msg;
-                              Any ->
-                                  %%io:format("don't send: ~p~n", [Any]),
+                              _ ->
                                   ok
                           end
                   end, Data).
@@ -122,7 +125,8 @@ wave(Tick, Users, Data, Keys) ->
                          dict:store(Who, {Tick,Typed}, Keys));
 
         %% Empty Post
-        {From, post, Who, <<>>} ->
+        {From, post, _, <<>>} ->
+            From ! posted,
             ?MODULE:wave(Tick+1, Users, Data, Keys);
             
         %% Post
@@ -325,7 +329,7 @@ handleGET(Req, DocRoot) ->
 %%
 %%
 %%
-handlePOST(Req, DocRoot) ->
+handlePOST(Req) ->
     "/foo/" ++ Path = Req:get(path),
     Wave = "foo",
     case Path of
@@ -352,8 +356,8 @@ handlePOST(Req, DocRoot) ->
             end,
             Req:ok({"text/javascript", mochijson2:encode({
                             struct, [
-                                     {status, ok},
-                                     {message, typed}
+                                     {status, Status},
+                                     {message, Message}
                                     ]
                         })
                    });
@@ -405,7 +409,7 @@ loop(Req, DocRoot) ->
         Method when Method =:= 'GET'; Method =:= 'HEAD' ->
             handleGET(Req, DocRoot);
         'POST' ->
-            handlePOST(Req, DocRoot);
+            handlePOST(Req);
         _ ->
             Req:respond({501, [], []})
     end.
