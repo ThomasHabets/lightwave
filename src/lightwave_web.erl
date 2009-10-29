@@ -109,7 +109,7 @@ get_the_room(_RoomName) ->
     end.
 
 getMessages(FromTime) ->
-    getMessages(FromTime, {error, error, lightwave, <<"timeout">>, 0}).
+    getMessages(FromTime, [{error, error, lightwave, <<"timeout">>, 0}]).
 getMessages(FromTime, TimeoutError) ->
     io:format("Waiting for message ~p ~p~n", [FromTime, self()]),
     receive
@@ -128,14 +128,14 @@ getMessages(FromTime, TimeoutError) ->
             TimeoutError
     end.
 
-constructReply(Req, Messages) ->
-    constructReply(Req, Messages, []).
-constructReply(Req, [], Ret) ->
+constructReply(Messages) ->
+    constructReply(Messages, []).
+constructReply([], Ret) ->
     Ret2 = lists:reverse(Ret),
     io:format("Encoding: ~p~n", [Ret2]),
-    Req:ok({"text/javascript", mochijson2:encode(Ret2)});
+    Ret2;
 
-constructReply(Req, Messages, Ret) ->
+constructReply(Messages, Ret) ->
     [H|T] = Messages,
     {Status, Type, Who, Message, MsgTime} = H,
     Cur = {struct, [
@@ -147,9 +147,9 @@ constructReply(Req, Messages, Ret) ->
                    ]},
     case Status of
         error ->
-            constructReply(Req, [], Cur);
+            constructReply([], [Cur]);
         _ ->
-            constructReply(Req, T, [Cur | Ret])
+            constructReply(T, [Cur | Ret])
     end.
 
 handleGET(Req, DocRoot) ->
@@ -163,8 +163,9 @@ handleGET(Req, DocRoot) ->
             receive
                 subscribed ->
                     Msgs = getMessages(FromTime),
-                    io:format("webloop: messages: ~p ~p~n", [Req, Msgs]),
-                    constructReply(Req, Msgs)
+                    io:format("webloop: messages: ~p~n", [Msgs]),
+                    Rep = constructReply(Msgs),
+                    Req:ok({"text/javascript", mochijson2:encode(Rep)})
             after ?ACK_TIMEOUT ->
                     io:format("webloop: can't sub?~n"),
                     RoomPid ! {self(), unsubscribe},
