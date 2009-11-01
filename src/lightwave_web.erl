@@ -12,7 +12,8 @@
          stop/0,
          loop/2,
          wave/0,
-         wave/4]).
+         wave/4
+        ]).
 
 %% timeout for internal messages that should just be acked
 -define(ACK_TIMEOUT, 100).
@@ -27,6 +28,7 @@
 %% start 
 %%
 start(Options) ->
+    io:format("Start options: ~p~n", [Options]),
     {DocRoot, Options1} = getOption(docroot, Options),
     Handler = fun (Req) ->
                       ?MODULE:loop(Req, DocRoot)
@@ -99,7 +101,7 @@ wave(Tick, Users, Data, Keys) ->
         %% Debug
         %%
         {From, getTyped} ->
-            %%io:format("wave: getTyped~n"),
+            io:format("wave: getTyped~n"),
             From ! Keys,
             ?MODULE:wave(Tick, Users, Data, Keys);
 
@@ -125,7 +127,7 @@ wave(Tick, Users, Data, Keys) ->
             case dict:find(Who, Keys) of
                 %% Ignore typing if it's just the same data anyway
                 {ok, {_, Typed}} ->
-                    ok;
+                    ?MODULE:wave(Tick, Users, Data, Keys);
                 _Any ->
                     lists:foreach(
                       fun(User) ->
@@ -134,10 +136,16 @@ wave(Tick, Users, Data, Keys) ->
                                        nowString(),
                                        Who,
                                        Typed}}
-                      end,Users)
-            end,
-            ?MODULE:wave(Tick+1, Users, Data,
-                         dict:store(Who, {Tick,Typed}, Keys));
+                      end,Users),
+                    NewKeys = case Typed of
+                                  <<>> ->
+                                      dict:erase(Who, Keys);
+                                  _ ->
+                                      dict:store(Who, {Tick, Typed}, Keys)
+                              end,
+                    ?MODULE:wave(Tick+1, Users, Data, NewKeys)
+            end;
+            
 
         %% Empty Post, ignore
         {From, post, _, <<>>} ->
@@ -165,13 +173,13 @@ wave(Tick, Users, Data, Keys) ->
 %% wave finder. Currently only one wave, so just return that Pid
 %%
 findWave(_WaveName) ->
-    Pid = whereis(thewave),
+    Pid = global:whereis_name(thewave),
     if
         is_pid(Pid) -> Pid;
         true ->
             % create it
             NewPid = spawn(fun() -> ?MODULE:wave() end),
-            register(thewave, NewPid),
+            global:register_name(thewave, NewPid),
             NewPid
     end.
 
