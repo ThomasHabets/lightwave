@@ -40,7 +40,7 @@ stop() ->
 %% Send the whole history of the wave to the client
 %%
 %% Client: Process to send the data
-%% Tickstart: only send blips newer than this
+%% TickStart: only send blips newer than this
 %% Data: full data history of wave
 %%
 waveFlush(Client, TickStart, Data) ->
@@ -75,10 +75,12 @@ wave() ->
                  ],
                 dict:new()).
 
+%% wave(Tick, Users, Data, Keys)
 %%
 %% Tick: next tick in channel. Tick *may* be wave-specific.
 %% Users: Pids of users subscribed
 %% Data: ordered list of all data in channel {Tick, Timestamp, Who, Message}
+%% Keys: dict of keypress data
 %%
 wave(Tick, Users, Data, Keys) ->
     %%io:format("wave(~p) loop: clients=~p~n", [self(), length(Users)]),
@@ -88,7 +90,8 @@ wave(Tick, Users, Data, Keys) ->
         %% System
         %%
         {system, {_From,_Ref}, {debug, {trace,Trace}}} ->
-            io:format("wave(~p): Trace started? ~p~n", [self(), Trace]);
+            io:format("wave(~p): Trace started? ~p~n", [self(), Trace]),
+            ?MODULE:wave(Tick, Users, Data, Keys);
 
         %%
         %% Debug
@@ -124,7 +127,7 @@ wave(Tick, Users, Data, Keys) ->
             ?MODULE:wave(Tick+1, Users, Data,
                          dict:store(Who, {Tick,Typed}, Keys));
 
-        %% Empty Post
+        %% Empty Post, ignore
         {From, post, _, <<>>} ->
             From ! posted,
             ?MODULE:wave(Tick+1, Users, Data, Keys);
@@ -179,7 +182,7 @@ onlyError(L) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% getMessages(FromTick)
-%% Get all messages from FromTick and on, ut until the timeout
+%% Get all messages from FromTick and on, or until the timeout
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%
