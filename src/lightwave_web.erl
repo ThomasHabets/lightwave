@@ -43,6 +43,8 @@ stop() ->
 %% TickStart: only send blips newer than this
 %% Data: full data history of wave
 %%
+%% FIXME: this does not include typed but not posted data
+%%
 waveFlush(Client, TickStart, Data) ->
     %%io:format("Flushing from ~p~n", [TimeStart]),
     lists:foreach(fun(D) ->
@@ -119,11 +121,21 @@ wave(Tick, Users, Data, Keys) ->
 
         %% Type
         {From, type, Who, Typed} ->
+            case dict:find(Who, Keys) of
+                %% Ignore typing if it's just the same data anyway
+                {ok, {_, Typed}} ->
+                    ok;
+                _Any ->
+                    lists:foreach(
+                      fun(User) ->
+                              User ! {type,
+                                      {Tick,
+                                       nowString(),
+                                       Who,
+                                       Typed}}
+                      end,Users)
+            end,
             From ! typed,
-            lists:foreach(fun(User) ->
-                                  User ! {type,
-                                          {Tick, nowString(), Who, Typed}}
-                          end, Users),
             ?MODULE:wave(Tick+1, Users, Data,
                          dict:store(Who, {Tick,Typed}, Keys));
 
