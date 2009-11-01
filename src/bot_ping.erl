@@ -31,7 +31,7 @@ loop(Waves) ->
             ?MODULE:loop(Waves -- [Waves]);
 
         %% Don't care about typing
-        {Wave, type, _} ->
+        {_Wave, type, _} ->
             ?MODULE:loop(Waves);
 
         %% Handle ping
@@ -40,7 +40,7 @@ loop(Waves) ->
             ?MODULE:loop(Waves);
 
         %% Ignore all other messages
-        {Wave, message, _} ->
+        {_Wave, message, _} ->
             ?MODULE:loop(Waves);
             
         Any ->
