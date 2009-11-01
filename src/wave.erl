@@ -13,6 +13,7 @@
          subscribe/1,
          unsubscribe/1,
          post/3,
+         names/1,
 
          %% Internal API only
          loop/4,
@@ -36,6 +37,20 @@ unsubscribe(WavePid) ->
     after ?ACK_TIMEOUT ->
             io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
                       [self(),WavePid])
+    end.
+
+%%
+%%
+%%
+names(WavePid) ->
+    WavePid ! {self(), names},
+    receive
+        {WavePid, names, Data} ->
+            Data
+    after ?ACK_TIMEOUT ->
+            io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
+                      [self(),WavePid]),
+            ["Error: unable to get list of members"]
     end.
 
 %%
@@ -74,6 +89,7 @@ post(Wave, Who, Msg) ->
 loopStart() ->
     io:format("wave(~p): booting~n", [self()]),
     bot_ping:start() ! {addWave, self()},
+    bot_wave:start() ! {addWave, self()},
     ?MODULE:loop(3,
                  [],
                  [
@@ -114,6 +130,9 @@ loop(Tick, Users, Data, Keys) ->
         %%
         %% Interface
         %%
+        {From, names} ->
+            From ! {self(), names, ["FIXME", "FIXME2"]},
+            ?MODULE:loop(Tick, Users, Data, Keys);
 
         %% Subscribe without history
         {From, subscribe} ->
@@ -162,7 +181,7 @@ loop(Tick, Users, Data, Keys) ->
         {From, post, _, <<>>} ->
             From ! {self(), posted},
             ?MODULE:loop(Tick+1, Users, Data, Keys);
-            
+
         %% Post
         {From, post, Who, Message} ->
             From ! {self(), posted},
