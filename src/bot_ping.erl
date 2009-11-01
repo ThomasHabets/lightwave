@@ -36,7 +36,7 @@ loop(Waves) ->
 
         %% Handle ping
         {Wave, message, {_Tick, _Ts, _Who, <<"ping">>}} ->
-            wave:post(Wave, <<"pong">>),
+            wave:post(Wave, 'bot_ping', <<"pong">>),
             ?MODULE:loop(Waves);
 
         %% Ignore all other messages
@@ -47,4 +47,3 @@ loop(Waves) ->
             io:format("Bot: error message: ~p~n", [Any]),
             ?MODULE:loop(Waves)
     end.
-

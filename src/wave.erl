@@ -12,7 +12,7 @@
          findWave/1,
          subscribe/1,
          unsubscribe/1,
-         post/2,
+         post/3,
 
          %% Internal API only
          loop/4,
@@ -54,8 +54,8 @@ subscribe(WavePid) ->
 %%
 %%
 %%
-post(Wave, Msg) ->
-    Wave ! {self(), post, 'bot_ping', Msg},
+post(Wave, Who, Msg) ->
+    Wave ! {self(), post, Who, Msg},
     receive
         {Wave, posted} ->
             ok
