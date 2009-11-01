@@ -10,17 +10,10 @@
 
 -export([start/1,
          stop/0,
-         loop/2,
-         wave/0,
-         wave/4
+         loop/2
         ]).
 
-%% timeout for internal messages that should just be acked
--define(ACK_TIMEOUT, 100).
-
-%% max time to wait a poll before returning a timeout
--define(GET_TIMEOUT, 120000).
-%%-define(GET_TIMEOUT, 5000).
+-include("lightwave.hrl").
 
 %% External API
 
@@ -37,151 +30,6 @@ start(Options) ->
 
 stop() ->
     mochiweb_http:stop(?MODULE).
-
-%%
-%% Send the whole history of the wave to the client
-%%
-%% Client: Process to send the data
-%% TickStart: only send blips newer than this
-%% Data: full data history of wave
-%%
-%% FIXME: this does not include typed but not posted data
-%%
-waveFlush(Client, TickStart, Data) ->
-    %%io:format("Flushing from ~p~n", [TimeStart]),
-    lists:foreach(fun(D) ->
-                          %%io:format("Iter: ~p~n", [D]),
-                          {Tick, _, _, _} = D,
-                          %%io:format("Iter: ~p ~p ~p~n", [N, Who, Line]),
-                          case Tick+1 > TickStart of
-                              true ->
-                                  Msg = {message, D},
-                                  %%io:format("send: ~p~n", [Msg]),
-                                  Client ! Msg;
-                              _ ->
-                                  ok
-                          end
-                  end, Data).
-
-
-%%
-%% Init wave
-%%
-wave() ->
-    io:format("wave(~p): booting~n", [self()]),
-    ?MODULE:wave(3,
-                 [],
-                 [
-                  {1, '2009-01-01 00:00:00', lightwave,
-                   list_to_binary("Initial message")},
-                  {2, '2009-01-01 00:00:01', lightwave,
-                   list_to_binary("Initial message2")}
-                 ],
-                dict:new()).
-
-%% wave(Tick, Users, Data, Keys)
-%%
-%% Tick: next tick in channel. Tick *may* be wave-specific.
-%% Users: Pids of users subscribed
-%% Data: ordered list of all data in channel {Tick, Timestamp, Who, Message}
-%% Keys: dict of keypress data
-%%
-wave(Tick, Users, Data, Keys) ->
-    %%io:format("wave(~p) loop: clients=~p~n", [self(), length(Users)]),
-
-    receive
-        %%
-        %% System
-        %%
-        {system, {_From,_Ref}, {debug, {trace,Trace}}} ->
-            io:format("wave(~p): Trace started? ~p~n", [self(), Trace]),
-            ?MODULE:wave(Tick, Users, Data, Keys);
-
-        %%
-        %% Debug
-        %%
-        {From, getTyped} ->
-            io:format("wave: getTyped~n"),
-            From ! Keys,
-            ?MODULE:wave(Tick, Users, Data, Keys);
-
-
-        %%
-        %% Interface
-        %%
-
-        %% Subscribe
-        {From, subscribe, TickStart} ->
-            From ! subscribed,
-            waveFlush(From, TickStart, Data),
-            ?MODULE:wave(Tick, [From | Users], Data, Keys);
-
-        %% Unsubscribe
-        {From, unsubscribe} ->
-            From ! unsubscribed,
-            ?MODULE:wave(Tick, Users -- [From], Data, Keys);
-
-        %% Type
-        {From, type, Who, Typed} ->
-            From ! typed,
-            case dict:find(Who, Keys) of
-                %% Ignore typing if it's just the same data anyway
-                {ok, {_, Typed}} ->
-                    ?MODULE:wave(Tick, Users, Data, Keys);
-                _Any ->
-                    lists:foreach(
-                      fun(User) ->
-                              User ! {type,
-                                      {Tick,
-                                       nowString(),
-                                       Who,
-                                       Typed}}
-                      end,Users),
-                    NewKeys = case Typed of
-                                  <<>> ->
-                                      dict:erase(Who, Keys);
-                                  _ ->
-                                      dict:store(Who, {Tick, Typed}, Keys)
-                              end,
-                    ?MODULE:wave(Tick+1, Users, Data, NewKeys)
-            end;
-            
-
-        %% Empty Post, ignore
-        {From, post, _, <<>>} ->
-            From ! posted,
-            ?MODULE:wave(Tick+1, Users, Data, Keys);
-            
-        %% Post
-        {From, post, Who, Message} ->
-            From ! posted,
-            New = {Tick, nowString(), Who, Message},
-            lists:foreach(fun(User) ->
-                                  %% broadcast the message
-                                  User ! {message, New}
-                          end, Users),
-            ?MODULE:wave(Tick+1,
-                         Users,
-                         lists:reverse([New | lists:reverse(Data)]),
-                         Keys);
-        _ ->
-            io:format("wave(~p): unknown message received~n", [self()]),
-            ?MODULE:wave(Tick, Users, Data, Keys)
-    end.
-
-%%
-%% wave finder. Currently only one wave, so just return that Pid
-%%
-findWave(_WaveName) ->
-    Pid = global:whereis_name(thewave),
-    if
-        is_pid(Pid) -> Pid;
-        true ->
-            % create it
-            NewPid = spawn(fun() -> ?MODULE:wave() end),
-            global:register_name(thewave, NewPid),
-            NewPid
-    end.
 
 %%
 %% Return true if the Data list is just a timeout error, else false
@@ -212,7 +60,7 @@ onlyError(L) ->
 %%
 getMessages(FromTick) ->
     {ok, TRef} = timer:send_after(?GET_TIMEOUT, done),
-    R = getMessages(FromTick, [{error, timeout, 1, nowString(),
+    R = getMessages(FromTick, [{error, timeout, 1, waveutil:nowString(),
                                 lightwave, <<"timeout">>}]),
     {ok, cancel} = timer:cancel(TRef),
     receive
@@ -231,7 +79,7 @@ getMessages(FromTick, Data) ->
     receive
         done ->
             Data;
-        {Type, {Tick, Timestamp, Who, Message}} ->
+        {_Wave, Type, {Tick, Timestamp, Who, Message}} ->
             case Tick < FromTick of
                 true ->
                     %%io:format("Ignored ~p~n", [MsgTime]),
@@ -302,19 +150,6 @@ constructReply(Messages, Ret) ->
             constructReply(T, [Cur | Ret])
     end.
 
-%%
-%%
-%%
-unsubscribe(WavePid) ->
-    WavePid ! {self(), unsubscribe},
-    receive
-        unsubscribed ->
-            ok
-    after ?ACK_TIMEOUT ->
-            io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
-                      [self(),WavePid])
-    end.
-
 
 %%
 %% FIXME: parse out wave name
@@ -325,18 +160,18 @@ handleGET(Req, DocRoot) ->
     case Path of
         "get/" ++ FromTimeS ->
             FromTime = list_to_integer(FromTimeS),
-            WavePid = findWave(Wave),
+            WavePid = wave:findWave(Wave),
             WavePid ! {self(), subscribe, FromTime},
             receive
-                subscribed ->
+                {WavePid, subscribed} ->
                     Msgs = getMessages(FromTime),
                     Rep = constructReply(Msgs),
-                    unsubscribe(WavePid),
+                    wave:unsubscribe(WavePid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
             after ?ACK_TIMEOUT ->
                     io:format("handleGET(~p): FIXME: sub timeout to ~p~n",
                               [self(), WavePid]),
-                    unsubscribe(WavePid),
+                    wave:unsubscribe(WavePid),
                     Req:ok({"text/javascript", mochijson2:encode({
                             struct, [
                                      {"status", error},
@@ -363,7 +198,7 @@ handlePOST(Req) ->
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             PostKeys = list_to_binary(proplists:get_value("keys", Data)),
             
-            WavePid = findWave(Wave),
+            WavePid = wave:findWave(Wave),
             %% post
             WavePid ! {self(),
                     type,
@@ -372,7 +207,7 @@ handlePOST(Req) ->
                     },
             
             receive
-                typed ->
+                {WavePid,typed} ->
                     {Status, Message} = {ok, <<"typed">>}
             after ?ACK_TIMEOUT ->
                     {Status, Message} = {error, <<"timeout">>}
@@ -392,7 +227,7 @@ handlePOST(Req) ->
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
             Wave = "foo",
-            WavePid = findWave(Wave),
+            WavePid = wave:findWave(Wave),
             %% post
             WavePid ! {self(),
                     post,
@@ -400,7 +235,7 @@ handlePOST(Req) ->
                     PostMessage
                     },
             receive
-                posted ->
+                {WavePid,posted} ->
                     %% posted
                     {Status, Message} = {ok, <<"posted">>}
             after ?ACK_TIMEOUT ->
@@ -448,10 +283,3 @@ getOption(Option, Options) ->
     {proplists:get_value(Option, Options), proplists:delete(Option, Options)}.
 
 
-%%
-%% FIXME: force fixed-width
-%%
-nowString() ->
-    {{Year,Month,Day},{Hour,Min,Seconds}} = erlang:universaltime(),
-    list_to_binary(io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B",
-                                 [Year,Month,Day,Hour,Min,Seconds])).
