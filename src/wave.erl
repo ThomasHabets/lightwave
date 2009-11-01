@@ -14,6 +14,8 @@
          unsubscribe/1,
          post/3,
          names/1,
+         save/2,
+         load/2,
 
          %% Internal API only
          loop/4,
@@ -37,6 +39,34 @@ unsubscribe(WavePid) ->
             ok
     after ?ACK_TIMEOUT ->
             io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
+                      [self(),WavePid]),
+            error
+    end.
+%%
+%% @spec save(WavePid, Filename) -> ok
+%% @doc Save wave data
+%%
+save(WavePid, Filename) ->
+    WavePid ! {self(), save, Filename},
+    receive
+        {WavePid, saved} ->
+            ok
+    after ?ACK_TIMEOUT ->
+            io:format("Pid~p: FIXME: Failed to save wave ~p~n",
+                      [self(),WavePid]),
+            error
+    end.
+%%
+%% @spec load(WavePid, Filename) -> ok
+%% @doc Load wave data
+%%
+load(WavePid, Filename) ->
+    WavePid ! {self(), load, Filename},
+    receive
+        {WavePid, loaded} ->
+            ok
+    after ?ACK_TIMEOUT ->
+            io:format("Pid~p: FIXME: Failed to load to wave ~p~n",
                       [self(),WavePid]),
             error
     end.
@@ -138,9 +168,24 @@ loop(Tick, Users, Data, Keys) ->
         %%
         %% Interface
         %%
+
+        %% List names
         {From, names} ->
             From ! {self(), names, ["FIXME", "FIXME2"]},
             ?MODULE:loop(Tick, Users, Data, Keys);
+
+        %% Save data to file
+        {From, save, Filename} ->
+            saveData(Data, Filename),
+            From ! {self(), saved},
+            ?MODULE:loop(Tick, Users, Data, Keys);
+
+        %% Load data from file
+        %% FIXME: force a client reload of page somehow
+        {From, load, Filename} ->
+            Data2 = loadData(Filename, Tick),
+            From ! {self(), loaded},
+            ?MODULE:loop(Tick+1, Users, Data2, Keys);
 
         %% Subscribe without history
         {From, subscribe} ->
@@ -241,3 +286,35 @@ flushWave(Client, TickStart, Data) ->
                                   ok
                           end
                   end, Data).
+
+
+data2diskdata(Data) ->
+    lists:map(fun(E) ->
+                      {_Tick, Ts, Who, Msg} = E,
+                      R={Ts, Who, Msg},
+                      R
+              end, Data).
+
+diskdata2data(Data, Tick) ->
+    diskdata2data(Data, Tick, []).
+diskdata2data([], _Tick, Ret) ->
+    lists:reverse(Ret);
+diskdata2data(Data, Tick, Ret) ->
+    [E|T] = Data,
+    {Ts, Who, Msg} = E,
+    diskdata2data(T, Tick+1, [{Tick, Ts, Who, Msg}|Ret]).
+
+%% @spec saveData(Data, Filename) -> ok
+saveData(Data, Filename) ->
+    {ok,F} = file:open(Filename,[write]),
+    io:fwrite(F, "~p.~n", [data2diskdata(Data)]),
+    file:close(F),
+    ok.
+
+
+%% @spec loadData(Filename, Tick) -> ok
+loadData(Filename, Tick) ->
+    {ok, F} = file:open(Filename,[read]),
+    {ok, Diskdata} = io:read(F, ''),
+    file:close(F),
+    diskdata2data(Diskdata, Tick).
