@@ -27,7 +27,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%
 
 %%
-%%
+%% @spec unsubscribe(WavePid) -> ok
+%% @doc Unsubscribe from wave
 %%
 unsubscribe(WavePid) ->
     WavePid ! {self(), unsubscribe},
@@ -36,11 +37,13 @@ unsubscribe(WavePid) ->
             ok
     after ?ACK_TIMEOUT ->
             io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
-                      [self(),WavePid])
+                      [self(),WavePid]),
+            error
     end.
 
 %%
-%%
+%% spec names(WavePid) -> List of names in wave
+%% @doc Get a list of all names in the wave
 %%
 names(WavePid) ->
     WavePid ! {self(), names},
@@ -48,13 +51,14 @@ names(WavePid) ->
         {WavePid, names, Data} ->
             Data
     after ?ACK_TIMEOUT ->
-            io:format("Pid~p: FIXME: Failed to unsubscribe from ~p~n",
+            io:format("Pid~p: FIXME: Failed to get names from ~p~n",
                       [self(),WavePid]),
             ["Error: unable to get list of members"]
     end.
 
 %%
-%%
+%% @spec subscribe(WavePid) -> ok
+%% @doc Subscribe to wave messages
 %%
 subscribe(WavePid) ->
     WavePid ! {self(), subscribe},
@@ -63,11 +67,13 @@ subscribe(WavePid) ->
             ok
     after ?ACK_TIMEOUT ->
             io:format("Pid~p: FIXME: Failed to subscribe from ~p~n",
-                      [self(),WavePid])
+                      [self(),WavePid]),
+            error
     end.
 
 %%
-%%
+%% @spec post(Wave,Who,Msg) -> ok
+%% @doc Post message to wave
 %%
 post(Wave, Who, Msg) ->
     Wave ! {self(), post, Who, Msg},
@@ -75,7 +81,8 @@ post(Wave, Who, Msg) ->
         {Wave, posted} ->
             ok
     after 1000 ->
-            io:format("Bot: timout posting :-(~n")
+            io:format("Bot: timout posting :-(~n"),
+            error
     end.
 
 
@@ -83,8 +90,8 @@ post(Wave, Who, Msg) ->
 %% Internal code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%
-%% Init wave
+%% @spec loopStart() -> ok
+%% @doc Init wave
 %%
 loopStart() ->
     io:format("wave(~p): booting~n", [self()]),
@@ -100,7 +107,8 @@ loopStart() ->
                  ],
                 dict:new()).
 
-%% loop(Tick, Users, Data, Keys)
+%% @spec loop(Tick, Users, Data, Keys) -> ok
+%% @doc main loop of wave
 %%
 %% Tick: next tick in channel. Tick *may* be wave-specific.
 %% Users: Pids of users subscribed
@@ -200,7 +208,8 @@ loop(Tick, Users, Data, Keys) ->
     end.
 
 %%
-%% wave finder. Currently only one wave, so just return that Pid
+%% @spec findWave(WaveName) -> WavePid
+%% @doc wave finder. Currently only one wave, so just return that Pid
 %%
 findWave(_WaveName) ->
     Pid = global:whereis_name(thewave),
