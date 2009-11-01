@@ -121,6 +121,7 @@ wave(Tick, Users, Data, Keys) ->
 
         %% Type
         {From, type, Who, Typed} ->
+            From ! typed,
             case dict:find(Who, Keys) of
                 %% Ignore typing if it's just the same data anyway
                 {ok, {_, Typed}} ->
@@ -135,7 +136,6 @@ wave(Tick, Users, Data, Keys) ->
                                        Typed}}
                       end,Users)
             end,
-            From ! typed,
             ?MODULE:wave(Tick+1, Users, Data,
                          dict:store(Who, {Tick,Typed}, Keys));
 
