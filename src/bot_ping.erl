@@ -1,9 +1,24 @@
+%% lightwave/src/bot_ping.erl
+%%
+%% @author author <thomas@habets.pp.se>
+%% @copyright 2009 Thomas Habets
+%%
+%% @doc Proof of concept bot
+%%
 -module(bot_ping).
 -export([
+         %% External API
          start/1,
          start/0,
+
+         %% Internal API
          loop/1
         ]).
+
+start() ->
+    spawn(fun() -> loop([]) end).
+start(Node) ->
+    spawn(Node, bot_ping, loop, [[]]).
 
 loop(Waves) ->
     receive
@@ -33,7 +48,3 @@ loop(Waves) ->
             ?MODULE:loop(Waves)
     end.
 
-start() ->
-    spawn(fun() -> loop([]) end).
-start(Node) ->
-    spawn(Node, bot_ping, loop, [[]]).

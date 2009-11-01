@@ -12,11 +12,11 @@
          findWave/1,
          subscribe/1,
          unsubscribe/1,
-         post/2
+         post/2,
 
          %% Internal API only
          loop/4,
-         loopStart/0,
+         loopStart/0
         ]).
 
 -include("lightwave.hrl").
@@ -73,6 +73,7 @@ post(Wave, Msg) ->
 %%
 loopStart() ->
     io:format("wave(~p): booting~n", [self()]),
+    bot_ping:start() ! {addWave, self()},
     ?MODULE:loop(3,
                  [],
                  [
