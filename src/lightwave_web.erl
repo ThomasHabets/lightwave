@@ -156,7 +156,7 @@ constructReply(Messages, Ret) ->
 %% FIXME: parse out wave name
 %%
 handleGET(Req, DocRoot) ->
-    io:format("GET: ~p~n", [Req:get(path)]),
+    %%io:format("GET: ~p~n", [Req:get(path)]),
     [Wave|Tail] = string:tokens(Req:get(path), "/"),
     case Tail of
         ["get", FromTimeS] ->

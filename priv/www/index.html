@@ -45,12 +45,16 @@ pre i *{color:#090;}
     </script>
 </head>
 <body>
-    <div id="doc">
+ <div id="doc">
 
-        <div id="header">
-            <h1><a href=".">Lightwave - like Google Wave, only much less</a></h1>
-            <p>powered by MochiWeb.</p>
-        </div>
+  <div id="header">
+   <h1><a href=".">Lightwave - like Google Wave, only much less</a></h1>
+   <p>powered by MochiWeb.</p>
+  </div>
+
+  <div id="menu">
+   Go to wave: <input type="text" id="goto-wave"/>
+  </div>
         <div id="content">
             <p class="nojs">JavaScript <strong>must</strong> be enabled to fully enjoy this game.</p>
             <div id="chat">
@@ -93,6 +97,7 @@ var url = "./";
 (function($) {
     $(document).ready(function() {
         var curChanTick = "1";
+
 
         $("#chat").bind("message", function(event, message) {
             $(this).triggerHandler("append", [message]);
@@ -201,6 +206,16 @@ var url = "./";
             return false;
         });
 
+        $('#goto-wave').keydown(function(e){
+          if(window.event)
+            key = window.event.keyCode; //IE
+          else
+            key = e.which; //firefox
+          if (key == 13) {
+            window.location = "/" + $('#goto-wave').attr('value') + "/";
+          }
+        });
+
 
         $("#message").attr("autocomplete", "off").focus();
     });
@@ -234,12 +249,12 @@ function tellType()
 
 // Show me the source easter egg.
 $("#header").
-    append([
+/*    append([
             '<p class="source">',
                 '(show me the <a href="#footer">source</a>.)',
             '</p>'
         ].join("")
-    ).
+    ). */
     click(function(event) {
         var target = event.target;
         if(target.nodeName.toLowerCase() === "a" &&
