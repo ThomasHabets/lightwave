@@ -1,4 +1,11 @@
-.js .nojs{display:none;}
+.js .nojs {
+  display: none;
+}
+.nojs {
+  font-size: 2em;
+  text-align: center;
+}
+
 
 html, body {margin:0;padding:0;}
 body {background:#fff;color:#222;font:62.5% "Helvetica Neue",Helvetica,Arial,sans-serif;text-align:center;}
