@@ -1,0 +1,41 @@
+.js .nojs{display:none;}
+
+html, body {margin:0;padding:0;}
+body {background:#fff;color:#222;font:62.5% "Helvetica Neue",Helvetica,Arial,sans-serif;text-align:center;}
+#doc {text-align:left;margin:0 auto;font-size:1em;width:80%;}
+#header {text-align:center;margin:2em 0;}
+#header * {margin:0;}
+#header h1 {color:#333;}
+h1, h2, h3 {letter-spacing:-1px;}
+
+.source {font-size:.8em;color:#000;}
+pre {font-size:.9em;background-color:#ffc;overflow-x:auto;}
+pre em {color:#009;}
+pre b {color:#900;}
+pre strong {color:#099;}
+pre i,
+pre i *{color:#090;}
+
+#menu {
+  text-align: center;
+  width: 100%;
+  font-size: 2em;
+}
+
+/* Chat */
+#chat .who {
+   width: 15em;
+   color: white;
+   background-color: black;
+}
+#chat {border:2px solid #000;width:100%;height:30em;overflow:auto;}
+#chat ol {margin:0px;padding:5px;list-style:none;}
+#chat tr {border-bottom:1px solid #eee;padding:5px 10px;}
+#chat tr.typer {border-bottom:1px solid #eee;padding:5px 10px;background-color: #aaa; }
+#chat .error {color:#f00;}
+
+#chatter {padding:5px;}
+#chatter label {color:#999;width:18%;text-align:right;display:block;float:left;line-height:1.5em;}
+#chatter input {width:60%;font-size:1em;margin:0 2px;}
+#chatter .submit {width:auto;width:18%;}
+

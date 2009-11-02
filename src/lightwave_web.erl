@@ -156,10 +156,10 @@ constructReply(Messages, Ret) ->
 %% FIXME: parse out wave name
 %%
 handleGET(Req, DocRoot) ->
-    %%io:format("GET: ~p~n", [Req:get(path)]),
     [Wave|Tail] = string:tokens(Req:get(path), "/"),
-    case Tail of
-        ["get", FromTimeS] ->
+    io:format("GET: ~p = ~p ~p~n", [Req:get(path), Wave, Tail]),
+    case {Wave,Tail} of
+        {_, ["get", FromTimeS]} ->
             FromTime = list_to_integer(FromTimeS),
             WavePid = wave:findWave(Wave),
             WavePid ! {self(), subscribe, FromTime},
@@ -181,9 +181,13 @@ handleGET(Req, DocRoot) ->
                                     ]})
                            })
             end;
-        ["static", _] ->
-            Req:serve_file(Req:get(path), DocRoot);
-        [] ->
+        {"static", _} ->
+            Path = string:join([Wave|Tail], "/"),
+            io:format("STATIC ~p~n", [Path]),
+            Req:serve_file(Path, DocRoot);
+        %%Req:serve_file(Req:get(path), DocRoot);
+            %%Req:serve_file(string:join(Path, "/"), DocRoot);
+        {_, []} ->
             Req:serve_file("", DocRoot)
     end.
 
