@@ -157,7 +157,7 @@ constructReply(Messages, Ret) ->
 %%
 handleGET(Req, DocRoot) ->
     [Wave|Tail] = string:tokens(Req:get(path), "/"),
-    io:format("GET: ~p = ~p ~p~n", [Req:get(path), Wave, Tail]),
+    %%io:format("GET: ~p = ~p ~p~n", [Req:get(path), Wave, Tail]),
     case {Wave,Tail} of
         {_, ["get", FromTimeS]} ->
             FromTime = list_to_integer(FromTimeS),
@@ -183,7 +183,7 @@ handleGET(Req, DocRoot) ->
             end;
         {"static", _} ->
             Path = string:join([Wave|Tail], "/"),
-            io:format("STATIC ~p~n", [Path]),
+            %%io:format("STATIC ~p~n", [Path]),
             Req:serve_file(Path, DocRoot);
         %%Req:serve_file(Req:get(path), DocRoot);
             %%Req:serve_file(string:join(Path, "/"), DocRoot);

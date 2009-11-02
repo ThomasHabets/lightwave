@@ -14,7 +14,12 @@ function dumpProps(obj, parent) {
       }
    }
 }
-var url = "./";
+
+wavename = window.location;
+wavename = RegExp("http://[^/]*"+"/([^/]*)/.*").exec(wavename)[1];
+wavename = wavename.toLowerCase();
+var url = "/" + wavename + "/";
+
 (function($) {
     $(document).ready(function() {
         var curChanTick = "1";
@@ -126,8 +131,6 @@ var url = "./";
             }
             return false;
         });
-        wavename = window.location;
-        wavename = RegExp("http://[^/]*"+"/([^/]*)/.*").exec(wavename)[1];
         $('#goto-wave').attr('value', wavename);
 
         $('#goto-wave').keydown(function(e){
