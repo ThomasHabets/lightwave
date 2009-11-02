@@ -22,6 +22,7 @@
 %%
 start(Options) ->
     io:format("Start options: ~p~n", [Options]),
+    wavefinder:start(),
     {DocRoot, Options1} = getOption(docroot, Options),
     Handler = fun (Req) ->
                       ?MODULE:loop(Req, DocRoot)
@@ -155,10 +156,10 @@ constructReply(Messages, Ret) ->
 %% FIXME: parse out wave name
 %%
 handleGET(Req, DocRoot) ->
-    "/foo/" ++ Path = Req:get(path),
-    Wave = "foo",
-    case Path of
-        "get/" ++ FromTimeS ->
+    io:format("GET: ~p~n", [Req:get(path)]),
+    [Wave|Tail] = string:tokens(Req:get(path), "/"),
+    case Tail of
+        ["get", FromTimeS] ->
             FromTime = list_to_integer(FromTimeS),
             WavePid = wave:findWave(Wave),
             WavePid ! {self(), subscribe, FromTime},
@@ -180,19 +181,20 @@ handleGET(Req, DocRoot) ->
                                     ]})
                            })
             end;
-        _ ->
-            Req:serve_file(Path, DocRoot)
+        ["static", _] ->
+            Req:serve_file(Req:get(path), DocRoot);
+        [] ->
+            Req:serve_file("", DocRoot)
     end.
 
 %%
 %%
 %%
 handlePOST(Req) ->
-    "/foo/" ++ Path = Req:get(path),
-    Wave = "foo",
-    case Path of
+    [Wave|Tail] = string:tokens(Req:get(path), "/"),
+    case Tail of
         %% Client is typing
-        "type" ->
+        ["type"] ->
             %%io:format("POST type~n"),
             Data = Req:parse_post(),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
@@ -221,12 +223,11 @@ handlePOST(Req) ->
                    });
 
         %% Client submitted a line
-        "chat" ->
+        ["chat"] ->
             %%io:format("POST chat~n"),
             Data = Req:parse_post(),
             PostMessage = list_to_binary(proplists:get_value("message", Data)),
             PostWho = list_to_binary(proplists:get_value("who", Data)),
-            Wave = "foo",
             WavePid = wave:findWave(Wave),
             %% post
             WavePid ! {self(),
@@ -281,5 +282,3 @@ loop(Req, DocRoot) ->
 %%
 getOption(Option, Options) ->
     {proplists:get_value(Option, Options), proplists:delete(Option, Options)}.
-
-

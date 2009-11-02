@@ -252,18 +252,20 @@ loop(Tick, Users, Data, Keys) ->
             ?MODULE:loop(Tick, Users, Data, Keys)
     end.
 
+
+
 %%
 %% @spec findWave(WaveName) -> WavePid
 %% @doc wave finder. Currently only one wave, so just return that Pid
 %%
-findWave(_WaveName) ->
-    Pid = global:whereis_name(thewave),
+findWave(WaveName) ->
+    {ok, Pid} = wavefinder:get(WaveName),
     if
         is_pid(Pid) -> Pid;
         true ->
             % create it
             NewPid = spawn(fun() -> ?MODULE:loopStart() end),
-            global:register_name(thewave, NewPid),
+            wavefinder:register(WaveName, NewPid),
             NewPid
     end.
 
