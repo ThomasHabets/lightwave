@@ -156,7 +156,12 @@ constructReply(Messages, Ret) ->
 %% FIXME: parse out wave name
 %%
 handleGET(Req, DocRoot) ->
-    [Wave|Tail] = string:tokens(Req:get(path), "/"),
+    case Req:get(path) of
+        "/" ->
+            {Wave,Tail} = {"static",["root.html"]};
+        _ ->
+            [Wave|Tail] = string:tokens(Req:get(path), "/")
+    end,
     %%io:format("GET: ~p = ~p ~p~n", [Req:get(path), Wave, Tail]),
     case {Wave,Tail} of
         {_, ["get", FromTimeS]} ->

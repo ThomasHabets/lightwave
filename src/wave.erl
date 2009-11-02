@@ -124,7 +124,7 @@ post(Wave, Who, Msg) ->
 %% @doc Init wave
 %%
 loopStart() ->
-    io:format("wave(~p): booting~n", [self()]),
+    %%io:format("wave(~p): booting~n", [self()]),
     bot_ping:start() ! {addWave, self()},
     bot_wave:start() ! {addWave, self()},
     ?MODULE:loop(3,
