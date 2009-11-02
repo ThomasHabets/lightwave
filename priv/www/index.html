@@ -1,10 +1,10 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
    "http://www.w3.org/TR/html4/strict.dtd">
 <html lang="en">
-<head>
-    <title>LightWave</title>
-    <meta http-equiv="content-type" content="text/html;charset=utf-8">
-    <style type="text/css">
+ <head>
+  <title>LightWave</title>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8">
+  <style type="text/css">
 .js .nojs{display:none;}
 
 html, body {margin:0;padding:0;}
@@ -22,6 +22,12 @@ pre b {color:#900;}
 pre strong {color:#099;}
 pre i,
 pre i *{color:#090;}
+
+#menu {
+  text-align: center;
+  width: 100%;
+  font-size: 2em;
+}
 
 /* Chat */
 #chat .who {
@@ -49,11 +55,12 @@ pre i *{color:#090;}
 
   <div id="header">
    <h1><a href=".">Lightwave - like Google Wave, only much less</a></h1>
-   <p>powered by MochiWeb.</p>
+   <p>powered by MochiWeb (Erlang).</p>
   </div>
 
   <div id="menu">
-   Go to wave: <input type="text" id="goto-wave"/>
+   Current wave: <input type="text" id="goto-wave"/>
+   <input type='submit' id='goto-wave-submit' value='Go to wave'/>
   </div>
         <div id="content">
             <p class="nojs">JavaScript <strong>must</strong> be enabled to fully enjoy this game.</p>
@@ -205,6 +212,9 @@ var url = "./";
             }
             return false;
         });
+        wavename = window.location;
+        wavename = RegExp("http://[^/]*"+"/([^/]*)/.*").exec(wavename)[1];
+        $('#goto-wave').attr('value', wavename);
 
         $('#goto-wave').keydown(function(e){
           if(window.event)
@@ -212,8 +222,11 @@ var url = "./";
           else
             key = e.which; //firefox
           if (key == 13) {
-            window.location = "/" + $('#goto-wave').attr('value') + "/";
+            $('#goto-wave-submit').click();
           }
+        });
+        $('#goto-wave-submit').click(function(){
+            window.location = "/" + $('#goto-wave').attr('value') + "/";
         });
 
 
