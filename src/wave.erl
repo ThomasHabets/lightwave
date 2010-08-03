@@ -18,8 +18,11 @@
          load/2,
 
          %% Internal API only
-         loop/4,
-         loopStart/0
+         loop/2,
+         loopStart/1,
+
+	 getData/1,
+	 putData/1
         ]).
 
 -include("lightwave.hrl").
@@ -119,25 +122,64 @@ post(Wave, Who, Msg) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Internal code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-record(waveData, {wavename, tick, users, data, keys}).
+%% rd(waveData, {tick, users, data, keys}).
 
-%% @spec loopStart() -> ok
+putData(Data) ->
+    mnesia:transaction(fun() ->
+			       mnesia:write(Data)
+		       end).
+
+
+getData(WaveName) ->
+    Res = mnesia:transaction(fun() ->
+				     mnesia:read(waveData, WaveName, write)
+			     end),
+    case Res of
+	{aborted, {no_exists, waveData}} ->
+	    getData(WaveName);
+	{atomic, []} ->
+	    {ok};
+	{atomic, Res2} ->
+	    [Top|_] = Res2,
+	    {ok, Top}
+    end.
+
+%% @spec loopStart(WaveName) -> ok
 %% @doc Init wave
 %%
-loopStart() ->
+loopStart(WaveName) ->
     %%io:format("wave(~p): booting~n", [self()]),
     bot_ping:start() ! {addWave, self()},
     bot_wave:start() ! {addWave, self()},
-    ?MODULE:loop(3,
-                 [],
-                 [
-                  {1, '2009-01-01 00:00:00', lightwave,
-                   list_to_binary("Initial message")},
-                  {2, '2009-01-01 00:00:01', lightwave,
-                   list_to_binary("Initial message2")}
-                 ],
-                dict:new()).
+    mnesia:create_schema([node()]),
+    mnesia:start(),
+    mnesia:create_table(waveData,
+			[{disc_copies, [node()]}, {attributes,
+						   record_info(fields,
+							       waveData)}]),
+    Initial = #waveData{wavename=WaveName,
+			tick=3,
+			users=[],
+			data=[
+			      {1, '2009-01-01 00:00:00', lightwave,
+			       list_to_binary("Initial message")},
+			      {2, '2009-01-01 00:00:01', lightwave,
+			       list_to_binary("Initial message2")}
+			     ],
+			keys=dict:new()},
+    DBData=getData(WaveName),
+    Data = case DBData of
+	       {ok, D} ->
+		   D;
+	       Any ->
+		   io:format("WHAT ~p~n", [Any]),
+		   Initial
+	   end,
+    ?MODULE:loop(WaveName, Data).
 
-%% @spec loop(Tick, Users, Data, Keys) -> ok
+
+%% @spec loop(WaveName, WaveData) -> ok
 %% @doc main loop of wave
 %%
 %% Tick: next tick in channel. Tick *may* be wave-specific.
@@ -145,8 +187,18 @@ loopStart() ->
 %% Data: ordered list of all data in channel {Tick, Timestamp, Who, Message}
 %% Keys: dict of keypress data
 %%
-loop(Tick, Users, Data, Keys) ->
-    %%io:format("wave(~p) loop: clients=~p~n", [self(), length(Users)]),
+loop(WaveName, WaveData) ->
+    %%io:format("wave(~p) loop: data=~p~n", [WaveName,
+%%					      WaveData]),
+    %%io:format("mnesia for ~p: ~p~n", [WaveName, WaveData2]),
+    Data=WaveData#waveData.data,
+    Tick=WaveData#waveData.tick,
+    Users=WaveData#waveData.users,
+    Keys=WaveData#waveData.keys,
+
+    putData(WaveData#waveData{users=[]}),
+%%io:format("Write op: ~p~n", [putData(WaveName, WaveData)]),
+    %%io:format("readback: ~p~n", [getData(WaveName)]),
 
     receive
         %%
@@ -154,7 +206,7 @@ loop(Tick, Users, Data, Keys) ->
         %%
         {system, {_From,_Ref}, {debug, {trace,Trace}}} ->
             io:format("wave(~p): Trace started? ~p~n", [self(), Trace]),
-            ?MODULE:loop(Tick, Users, Data, Keys);
+            ?MODULE:loop(WaveName, WaveData);
 
         %%
         %% Debug
@@ -162,7 +214,7 @@ loop(Tick, Users, Data, Keys) ->
         {From, getTyped} ->
             io:format("wave: getTyped~n"),
             From ! Keys,
-            ?MODULE:loop(Tick, Users, Data, Keys);
+            ?MODULE:loop(WaveName, WaveData);
 
 
         %%
@@ -172,36 +224,40 @@ loop(Tick, Users, Data, Keys) ->
         %% List names
         {From, names} ->
             From ! {self(), names, ["FIXME", "FIXME2"]},
-            ?MODULE:loop(Tick, Users, Data, Keys);
+            ?MODULE:loop(WaveName, WaveData);
 
         %% Save data to file
         {From, save, Filename} ->
             saveData(Data, Filename),
             From ! {self(), saved},
-            ?MODULE:loop(Tick, Users, Data, Keys);
+            ?MODULE:loop(WaveName, WaveData);
 
         %% Load data from file
         %% FIXME: force a client reload of page somehow
         {From, load, Filename} ->
-            Data2 = loadData(Filename, Tick),
+            Data2 = WaveData#waveData{data=loadData(Filename, Tick),
+				      tick=Tick+1},
             From ! {self(), loaded},
-            ?MODULE:loop(Tick+1, Users, Data2, Keys);
+            ?MODULE:loop(WaveName, Data2);
 
         %% Subscribe without history
         {From, subscribe} ->
             From ! {self(), subscribed},
-            ?MODULE:loop(Tick, [From | Users], Data, Keys);
+	    ?MODULE:loop(WaveName,
+			 WaveData#waveData{users=[From | Users]});
 
         %% Subscribe with history
         {From, subscribe, TickStart} ->
             From ! {self(), subscribed},
             flushWave(From, TickStart, Data),
-            ?MODULE:loop(Tick, [From | Users], Data, Keys);
+            ?MODULE:loop(WaveName,
+			 WaveData#waveData{users=[From | Users]});
 
         %% Unsubscribe
         {From, unsubscribe} ->
             From ! {self(), unsubscribed},
-            ?MODULE:loop(Tick, Users -- [From], Data, Keys);
+            ?MODULE:loop(WaveName,
+			 WaveData#waveData{users=Users -- [From]});
 
         %% Type
         {From, type, Who, Typed} ->
@@ -209,7 +265,7 @@ loop(Tick, Users, Data, Keys) ->
             case dict:find(Who, Keys) of
                 %% Ignore typing if it's just the same data anyway
                 {ok, {_, Typed}} ->
-                    ?MODULE:loop(Tick, Users, Data, Keys);
+                    ?MODULE:loop(WaveName, WaveData);
                 _Any ->
                     lists:foreach(
                       fun(User) ->
@@ -226,14 +282,17 @@ loop(Tick, Users, Data, Keys) ->
                                   _ ->
                                       dict:store(Who, {Tick, Typed}, Keys)
                               end,
-                    ?MODULE:loop(Tick+1, Users, Data, NewKeys)
+                    ?MODULE:loop(WaveName,
+				 WaveData#waveData{tick=Tick+1,
+						   keys=NewKeys})
             end;
             
 
         %% Empty Post, ignore
         {From, post, _, <<>>} ->
             From ! {self(), posted},
-            ?MODULE:loop(Tick+1, Users, Data, Keys);
+            ?MODULE:loop(WaveName,
+			 WaveData#waveData{tick=Tick+1});
 
         %% Post
         {From, post, Who, Message} ->
@@ -243,13 +302,12 @@ loop(Tick, Users, Data, Keys) ->
                                   %% broadcast the message
                                   User ! {self(), message, New}
                           end, Users),
-            ?MODULE:loop(Tick+1,
-                         Users,
-                         lists:reverse([New | lists:reverse(Data)]),
-                         Keys);
+            ?MODULE:loop(WaveName,
+			 WaveData#waveData{tick=Tick+1,
+					   data=lists:reverse([New | lists:reverse(Data)])});
         _ ->
             io:format("wave(~p): unknown message received~n", [self()]),
-            ?MODULE:loop(Tick, Users, Data, Keys)
+            ?MODULE:loop(WaveName, WaveData)
     end.
 
 
@@ -264,7 +322,7 @@ findWave(WaveName) ->
         is_pid(Pid) -> Pid;
         true ->
             % create it
-            NewPid = spawn(fun() -> ?MODULE:loopStart() end),
+            NewPid = spawn(fun() -> ?MODULE:loopStart(WaveName) end),
             wavefinder:register(WaveName, NewPid),
             NewPid
     end.

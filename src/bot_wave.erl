@@ -46,8 +46,11 @@ loop(Waves) ->
         %% Ignore all other messages
         {_Wave, message, _} ->
             ?MODULE:loop(Waves);
+
+	{_Wave, subscribed} ->
+            ?MODULE:loop(Waves);
             
         Any ->
-            io:format("Bot: error message: ~p~n", [Any]),
+            io:format("Bot_wave: error message: ~p~n", [Any]),
             ?MODULE:loop(Waves)
     end.
