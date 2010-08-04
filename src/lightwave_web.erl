@@ -174,7 +174,7 @@ handleGET(Req, DocRoot) ->
                     Rep = constructReply(Msgs),
                     wave:unsubscribe(WavePid),
                     Req:ok({"text/javascript", mochijson2:encode(Rep)})
-            after ?ACK_TIMEOUT ->
+            after ?ACK_TIMEOUT * 5 ->
                     io:format("handleGET(~p): FIXME: sub timeout to ~p~n",
                               [self(), WavePid]),
                     wave:unsubscribe(WavePid),

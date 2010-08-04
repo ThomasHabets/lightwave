@@ -94,14 +94,18 @@ names(WavePid) ->
 %% @doc Subscribe to wave messages
 %%
 subscribe(WavePid) ->
+    subscribe(WavePid, 1).
+subscribe(_WavePid, 3) ->
+    error;
+subscribe(WavePid, N) ->
     WavePid ! {self(), subscribe},
     receive
         {WavePid, subscribed} ->
             ok
     after ?ACK_TIMEOUT ->
-            io:format("Pid~p: FIXME: Failed to subscribe from ~p~n",
+            io:format("Pid~p: FIXME: Failed to subscribe to ~p~n",
                       [self(),WavePid]),
-            error
+            subscribe(WavePid, N + 1)
     end.
 
 %%
