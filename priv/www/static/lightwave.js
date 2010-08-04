@@ -16,9 +16,9 @@ function dumpProps(obj, parent) {
 }
 
 wavename = window.location;
-wavename = RegExp("http://[^/]*"+"/([^/]*)/.*").exec(wavename)[1];
+wavename = RegExp("http://[^/]*/?.*/([^/]+)/?").exec(wavename)[1];
 wavename = wavename.toLowerCase();
-var url = "/" + wavename + "/";
+var url = "/lightwave/" + wavename + "/";
 
 (function($) {
     $(document).ready(function() {
@@ -143,7 +143,7 @@ var url = "/" + wavename + "/";
           }
         });
         $('#goto-wave-submit').click(function(){
-            window.location = "/" + $('#goto-wave').attr('value') + "/";
+            window.location = "/lightwave/" + $('#goto-wave').attr('value') + "/";
         });
 
 
