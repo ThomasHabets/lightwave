@@ -162,8 +162,8 @@ getData(WaveName) ->
 %%
 loopStart(WaveName) ->
     %%io:format("wave(~p): booting~n", [self()]),
-    bot_ping:start() ! {addWave, self()},
-    bot_wave:start() ! {addWave, self()},
+    %bot_ping:start() ! {addWave, self()},
+    %bot_wave:start() ! {addWave, self()},
     Initial = #waveData{wavename=WaveName,
 			tick=3,
 			users=[],
@@ -195,16 +195,13 @@ loopStart(WaveName) ->
 %%
 loop(WaveName, WaveData) ->
     %%io:format("wave(~p) loop: data=~p~n", [WaveName,
-%%					      WaveData]),
-    %%io:format("mnesia for ~p: ~p~n", [WaveName, WaveData2]),
+    %%					      WaveData]),
     Data=WaveData#waveData.data,
     Tick=WaveData#waveData.tick,
     Users=WaveData#waveData.users,
     Keys=WaveData#waveData.keys,
 
     putData(WaveData#waveData{users=[]}),
-%%io:format("Write op: ~p~n", [putData(WaveName, WaveData)]),
-    %%io:format("readback: ~p~n", [getData(WaveName)]),
 
     receive
         %%
@@ -321,6 +318,17 @@ loop(WaveName, WaveData) ->
             io:format("wave(~p: ~p): unknown message received~n",
                       [self(), WaveName]),
             ?MODULE:loop(WaveName, WaveData)
+    after 3000 ->
+            case Users of
+                [] ->
+                    io:format("wave(~p: ~p): exit because of inactivity~n",
+                              [self(), WaveName]),
+                    {ok};
+                _ ->
+                    %%io:format("wave(~p: ~p): still alive: ~p~n",
+                    %%          [self(), WaveName, Users]),
+                    ?MODULE:loop(WaveName, WaveData)
+            end
     end.
 
 
