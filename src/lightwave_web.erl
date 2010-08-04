@@ -15,6 +15,8 @@
 
 -include("lightwave.hrl").
 
+-define(URLROOT, "/lightwave").
+
 %% External API
 
 %%
@@ -159,8 +161,10 @@ handleGET(Req, DocRoot) ->
     case Req:get(path) of
         "/" ->
             {Wave,Tail} = {"static",["root.html"]};
-        _ ->
-            [Wave|Tail] = string:tokens(Req:get(path), "/")
+        ?URLROOT ++ "/" ->
+            {Wave,Tail} = {"static",["root.html"]};
+        ?URLROOT ++ P ->
+            [Wave|Tail] = string:tokens(P, "/")
     end,
     %%io:format("GET: ~p = ~p ~p~n", [Req:get(path), Wave, Tail]),
     case {Wave,Tail} of
@@ -200,7 +204,10 @@ handleGET(Req, DocRoot) ->
 %%
 %%
 handlePOST(Req) ->
-    [Wave|Tail] = string:tokens(Req:get(path), "/"),
+    case Req:get(path) of
+        ?URLROOT ++ R2 ->
+            [Wave|Tail] = string:tokens(R2, "/")
+    end,
     case Tail of
         %% Client is typing
         ["type"] ->

@@ -37,7 +37,12 @@ handle_call({get, Name}, _From, Data) ->
     E = dict:find(Name, Data),
     case E of
         {ok, E2} ->
-            {reply, {ok, E2}, Data};
+            case erlang:is_process_alive(E2) of
+                true ->
+                    {reply, {ok, E2}, Data};
+                false ->
+                    {reply, {ok, []}, dict:erase(Name, Data)}
+            end;
         _ ->
             {reply, {ok, []}, Data}
     end;
