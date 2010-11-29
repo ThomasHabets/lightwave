@@ -1,0 +1,6 @@
+./start-dev.sh
+
+mnesia:stop().
+wave:createSchema().
+
+
