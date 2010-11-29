@@ -17,12 +17,14 @@
          save/2,
          load/2,
 
-         %% Internal API only
-         loop/2,
-         loopStart/1,
-
+         createSchema/0,
 	 getData/1,
-	 putData/1
+	 putData/1,
+         quit/1,
+
+         %% Internal API only
+         loopStart/1,
+         loop/2
         ]).
 
 -include("lightwave.hrl").
@@ -109,6 +111,12 @@ subscribe(WavePid, N) ->
     end.
 
 %%
+%% @spec quit(WavePid) -> ok
+%%
+quit(WavePid) ->
+    WavePid ! {self(), quit}.
+
+%%
 %% @spec post(Wave,Who,Msg) -> ok
 %% @doc Post message to wave
 %%
@@ -154,14 +162,8 @@ getData(WaveName) ->
 %%
 loopStart(WaveName) ->
     %%io:format("wave(~p): booting~n", [self()]),
-    bot_ping:start() ! {addWave, self()},
-    bot_wave:start() ! {addWave, self()},
-    mnesia:create_schema([node()]),
-    mnesia:start(),
-    mnesia:create_table(waveData,
-			[{disc_copies, [node()]}, {attributes,
-						   record_info(fields,
-							       waveData)}]),
+    %bot_ping:start() ! {addWave, self()},
+    %bot_wave:start() ! {addWave, self()},
     Initial = #waveData{wavename=WaveName,
 			tick=3,
 			users=[],
@@ -193,16 +195,13 @@ loopStart(WaveName) ->
 %%
 loop(WaveName, WaveData) ->
     %%io:format("wave(~p) loop: data=~p~n", [WaveName,
-%%					      WaveData]),
-    %%io:format("mnesia for ~p: ~p~n", [WaveName, WaveData2]),
+    %%					      WaveData]),
     Data=WaveData#waveData.data,
     Tick=WaveData#waveData.tick,
     Users=WaveData#waveData.users,
     Keys=WaveData#waveData.keys,
 
     putData(WaveData#waveData{users=[]}),
-%%io:format("Write op: ~p~n", [putData(WaveName, WaveData)]),
-    %%io:format("readback: ~p~n", [getData(WaveName)]),
 
     receive
         %%
@@ -309,9 +308,27 @@ loop(WaveName, WaveData) ->
             ?MODULE:loop(WaveName,
 			 WaveData#waveData{tick=Tick+1,
 					   data=lists:reverse([New | lists:reverse(Data)])});
+
+        %% Quit
+        {From, quit} ->
+            io:format("wave(~p: ~p): got quit signal~n",
+                      [self(), WaveName]),
+            {ok};
         _ ->
-            io:format("wave(~p): unknown message received~n", [self()]),
+            io:format("wave(~p: ~p): unknown message received~n",
+                      [self(), WaveName]),
             ?MODULE:loop(WaveName, WaveData)
+    after 3000 ->
+            case Users of
+                [] ->
+                    io:format("wave(~p: ~p): exit because of inactivity~n",
+                              [self(), WaveName]),
+                    {ok};
+                _ ->
+                    %%io:format("wave(~p: ~p): still alive: ~p~n",
+                    %%          [self(), WaveName, Users]),
+                    ?MODULE:loop(WaveName, WaveData)
+            end
     end.
 
 
@@ -382,3 +399,10 @@ loadData(Filename, Tick) ->
     {ok, Diskdata} = io:read(F, ''),
     file:close(F),
     diskdata2data(Diskdata, Tick).
+
+createSchema() ->
+    mnesia:create_schema([node()]),
+    mnesia:create_table(waveData,
+			[{disc_copies, [node()]}, {attributes,
+						   record_info(fields,
+							       waveData)}]).

@@ -4,4 +4,5 @@ exec erl -pa $PWD/ebin $PWD/deps/*/ebin \
     -boot start_sasl \
     -sname $(hostname) \
     -s reloader \
+    -s mnesia \
     -s lightwave
