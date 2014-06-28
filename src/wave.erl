@@ -264,8 +264,9 @@ loop(WaveName, WaveData) ->
 			 WaveData#waveData{users=Users -- [From]});
 
         %% Type
-        {From, type, Who, UnsafeTyped} ->
+        {From, type, UnsafeWho, UnsafeTyped} ->
             Typed = list_to_binary(re:replace(UnsafeTyped, "[<>]", "", [global,{return,list}])),
+            Who = list_to_binary(re:replace(UnsafeWho, "[<>]", "", [global,{return,list}])),
             From ! {self(), typed},
             case dict:find(Who, Keys) of
                 %% Ignore typing if it's just the same data anyway
@@ -300,8 +301,9 @@ loop(WaveName, WaveData) ->
 			 WaveData#waveData{tick=Tick+1});
 
         %% Post
-        {From, post, Who, UnsafeMessage} ->
+        {From, post, UnsafeWho, UnsafeMessage} ->
             Message = list_to_binary(re:replace(UnsafeMessage, "[<>]", "", [global,{return,list}])),
+            Who = list_to_binary(re:replace(UnsafeWho, "[<>]", "", [global,{return,list}])),
             From ! {self(), posted},
             New = {Tick, waveutil:nowString(), Who, Message},
             lists:foreach(fun(User) ->
