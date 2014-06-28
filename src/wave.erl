@@ -121,7 +121,8 @@ quit(WavePid) ->
 %% @doc Post message to wave
 %%
 post(Wave, Who, Msg) ->
-    Wave ! {self(), post, Who, Msg},
+    SafeMsg = re:replace(Msg, "[<>]", "", [global,{return,list}]),
+    Wave ! {self(), post, Who, SafeMsg},
     receive
         {Wave, posted} ->
             ok
@@ -263,7 +264,8 @@ loop(WaveName, WaveData) ->
 			 WaveData#waveData{users=Users -- [From]});
 
         %% Type
-        {From, type, Who, Typed} ->
+        {From, type, Who, UnsafeTyped} ->
+            Typed = list_to_binary(re:replace(UnsafeTyped, "[<>]", "", [global,{return,list}])),
             From ! {self(), typed},
             case dict:find(Who, Keys) of
                 %% Ignore typing if it's just the same data anyway
@@ -298,7 +300,8 @@ loop(WaveName, WaveData) ->
 			 WaveData#waveData{tick=Tick+1});
 
         %% Post
-        {From, post, Who, Message} ->
+        {From, post, Who, UnsafeMessage} ->
+            Message = list_to_binary(re:replace(UnsafeMessage, "[<>]", "", [global,{return,list}])),
             From ! {self(), posted},
             New = {Tick, waveutil:nowString(), Who, Message},
             lists:foreach(fun(User) ->
@@ -310,7 +313,7 @@ loop(WaveName, WaveData) ->
 					   data=lists:reverse([New | lists:reverse(Data)])});
 
         %% Quit
-        {From, quit} ->
+        {_From, quit} ->
             io:format("wave(~p: ~p): got quit signal~n",
                       [self(), WaveName]),
             {ok};

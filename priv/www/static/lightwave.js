@@ -16,7 +16,7 @@ function dumpProps(obj, parent) {
 }
 
 wavename = window.location;
-wavename = RegExp("http://[^/]*/?.*/([^/]+)/?").exec(wavename)[1];
+wavename = RegExp("https?://[^/]*/?.*/([^/]+)/?").exec(wavename)[1];
 wavename = wavename.toLowerCase();
 var url = "/lightwave/" + wavename + "/";
 
